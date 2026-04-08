@@ -1,0 +1,31 @@
+Saree Analysis (VERY POWERFUL)
+
+Give input:
+
+Saree image only
+
+Ask Gemini:
+
+Identify:
+1. Pallu region
+2. Border
+3. Body pattern
+4. Fabric type
+
+👉 Output = structured JSON
+
+Example:
+
+{
+  "pallu_position": "right_end",
+  "border_width": "thick",
+  "body_pattern": "floral",
+  "fabric": "silk"
+}
+✅ 2. Prompt Generation (BEST USE CASE)
+
+Gemini can generate strong prompts like:
+
+"A woman wearing a silk saree with wide gold border, detailed pallu over left shoulder, neat front pleats, realistic draping"
+
+👉 This improves output from other models

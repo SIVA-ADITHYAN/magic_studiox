@@ -1,0 +1,9 @@
+Shirt= S1,S2,S3
+Pant= P1,P2,P3
+Jeans= J1,J2,J3
+Shorts = S1,S2,S3
+Jacket= J1,J2,J3
+Hoodie= H1,H2,H3
+Sweater=SW1,SW2,SW3
+Blazer=B1,B2,B3
+Tshire= T1,T2,T3

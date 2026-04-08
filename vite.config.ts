@@ -6,6 +6,13 @@ export default defineConfig({
   base: "/ecommerce-scene-generator/",
   server: {
     port: 5173,
+    proxy: {
+      "/multiangle-api": {
+        target: "http://localhost:7861",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/multiangle-api/, "/api"),
+      },
+    },
   },
   build: {
     outDir: "docs",

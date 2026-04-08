@@ -1,0 +1,70 @@
+<style>
+  #cam3d-container {
+    background: #111218;
+    border-radius: 14px;
+    overflow: hidden;
+    user-select: none;
+    font-family: system-ui, sans-serif;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  #cam3d-header {
+    padding: 12px 16px 6px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  #cam3d-header .hint-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #cam3d-canvas {
+    display: block;
+    width: 100%;
+    height: 360px;
+    cursor: grab;
+    touch-action: none;
+    background: #1a1a1a;
+  }
+
+  #cam3d-canvas:active {
+    cursor: grabbing;
+  }
+
+  #cam3d-label {
+    text-align: center;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #00ffae;
+    padding: 9px 16px 11px;
+    background: rgba(0, 0, 0, 0.82);
+    letter-spacing: 0.3px;
+    min-height: 26px;
+  }
+</style>
+
+<div id="cam3d-container">
+  <div id="cam3d-header">
+    <span>Drag the colored handles:</span>
+    <span class="hint-item">
+      <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="5" fill="#15f5bf"></circle></svg>
+      Azimuth
+    </span>
+    <span class="hint-item">
+      <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="5" fill="#ff6bc6"></circle></svg>
+      Elevation
+    </span>
+    <span class="hint-item">
+      <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="5" fill="#ffb347"></circle></svg>
+      Distance
+    </span>
+  </div>
+  <canvas id="cam3d-canvas" height="360"></canvas>
+  <div id="cam3d-label">&lt;sks&gt; front view eye-level shot medium shot</div>
+</div>

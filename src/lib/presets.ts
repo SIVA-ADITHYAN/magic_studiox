@@ -2,6 +2,7 @@ export type Option = { value: string; label: string };
 
 export const occasionPresetOptions: Option[] = [
   { value: "", label: "Auto" },
+  { value: "none", label: "Nil" },
   {
     value:
       "everyday casual daytime street style; modern ecommerce look; clean natural daylight; approachable, effortless vibe",
@@ -53,6 +54,7 @@ export const occasionPresetLabelByValue: Record<string, string> = Object.fromEnt
 
 export const footwearPresetOptions: Option[] = [
   { value: "", label: "Auto" },
+  { value: "none", label: "Nil" },
   { value: "white_sneakers", label: "White sneakers" },
   { value: "chunky_sneakers", label: "Chunky sneakers" },
   { value: "strappy_heels", label: "Strappy heels" },
@@ -152,6 +154,7 @@ export const stylePresetLabelByValue: Record<string, string> = Object.fromEntrie
 
 export const modelStylingPresetOptions: Option[] = [
   { value: "", label: "Auto" },
+  { value: "none", label: "Nil" },
   {
     value:
       "natural glam makeup; fresh dewy skin; softly defined eyes; subtle lip; polished but effortless; ecommerce-friendly",

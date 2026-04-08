@@ -7,7 +7,10 @@ import StoryboardEditorHeader from "./components/StoryboardEditorHeader";
 import StoryboardFormCards from "./components/StoryboardFormCards";
 import StoryboardResultsPane from "./components/StoryboardResultsPane";
 import PrintsTab from "./components/PrintsTab";
+import Toast, { type ToastItem } from "./components/Toast";
 import SavedImagesPane from "./components/SavedImagesPane";
+import MultiAngleTab from "./components/MultiAngleTab";
+import AssetsTab from "./components/AssetsTab";
 
 import { base64ToBytes, dataUrlToInlineImage, generateImage } from "./lib/gemini";
 import {
@@ -60,8 +63,12 @@ type StoryboardPrintsRuntime = {
   baseGarmentBackFileName: string | null;
   baseGarmentSideDataUrl: string | null;
   baseGarmentSideFileName: string | null;
-  printDesignDataUrl: string | null;
-  printDesignFileName: string | null;
+  printDesignFrontDataUrl: string | null;
+  printDesignFrontFileName: string | null;
+  printDesignBackDataUrl: string | null;
+  printDesignBackFileName: string | null;
+  printDesignSideDataUrl: string | null;
+  printDesignSideFileName: string | null;
   outputFrontDataUrl: string | null;
   outputFrontMimeType: string | null;
   outputBackDataUrl: string | null;
@@ -80,6 +87,8 @@ type StoryboardRuntime = {
   backgroundFileNames: string[];
   modelDataUrls: string[];
   modelFileNames: string[];
+  poseDataUrls: string[];
+  poseFileNames: string[];
   garmentRefDataUrl: string | null;
   garmentRefMimeType: string | null;
   lastPlan: LookPlan | null;
@@ -94,10 +103,60 @@ type StoryboardRuntime = {
   resultTimingsMs: Record<string, number> | null;
 };
 
-type AppTab = "prints" | "generate" | "assets" | "saved";
+type AppTab = "prints" | "generate" | "assets" | "saved" | "multiangle";
 type SavedImageView = SavedImageRecord & { url: string };
 
 // ─── Pure helpers (outside component) ────────────────────────────────────────
+
+/**
+ * Canvas-composites a design image onto a garment image.
+ * The design is placed in the printable area (center-upper region) using multiply blend.
+ */
+function compositeDesignOnGarment(garmentDataUrl: string, designDataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { reject(new Error("Canvas not supported")); return; }
+
+    const garmentImg = new Image();
+    garmentImg.onload = () => {
+      canvas.width = garmentImg.naturalWidth || 800;
+      canvas.height = garmentImg.naturalHeight || 1000;
+
+      // White background so multiply blend works correctly on transparent PNGs
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(garmentImg, 0, 0);
+
+      const designImg = new Image();
+      designImg.onload = () => {
+        // Printable area: centered horizontally, upper-mid region vertically
+        const areaX = canvas.width * 0.2;
+        const areaY = canvas.height * 0.15;
+        const areaW = canvas.width * 0.6;
+        const areaH = canvas.height * 0.5;
+
+        // Fit design inside area while preserving aspect ratio
+        const designAR = designImg.naturalWidth / designImg.naturalHeight;
+        const areaAR = areaW / areaH;
+        let dw = areaW, dh = areaH;
+        if (designAR > areaAR) { dh = areaW / designAR; } else { dw = areaH * designAR; }
+        const dx = areaX + (areaW - dw) / 2;
+        const dy = areaY + (areaH - dh) / 2;
+
+        ctx.globalCompositeOperation = "multiply";
+        ctx.drawImage(designImg, dx, dy, dw, dh);
+        ctx.globalCompositeOperation = "source-over";
+
+        resolve(canvas.toDataURL("image/png"));
+      };
+      designImg.onerror = () => reject(new Error("Failed to load design image"));
+      designImg.src = designDataUrl;
+    };
+    garmentImg.onerror = () => reject(new Error("Failed to load garment image"));
+    garmentImg.src = garmentDataUrl;
+  });
+}
 
 const GENERATION_STEPS = [
   "Getting all the configurations",
@@ -117,7 +176,9 @@ function createDefaultPrintsRuntime(): StoryboardPrintsRuntime {
     baseGarmentFrontDataUrl: null, baseGarmentFrontFileName: null,
     baseGarmentBackDataUrl: null, baseGarmentBackFileName: null,
     baseGarmentSideDataUrl: null, baseGarmentSideFileName: null,
-    printDesignDataUrl: null, printDesignFileName: null,
+    printDesignFrontDataUrl: null, printDesignFrontFileName: null,
+    printDesignBackDataUrl: null, printDesignBackFileName: null,
+    printDesignSideDataUrl: null, printDesignSideFileName: null,
     outputFrontDataUrl: null, outputFrontMimeType: null,
     outputBackDataUrl: null, outputBackMimeType: null,
     outputSideDataUrl: null, outputSideMimeType: null,
@@ -130,6 +191,7 @@ function createDefaultRuntime(): StoryboardRuntime {
     garmentDataUrls: [], garmentFileNames: [],
     backgroundDataUrls: [], backgroundFileNames: [],
     modelDataUrls: [], modelFileNames: [],
+    poseDataUrls: [], poseFileNames: [],
     garmentRefDataUrl: null, garmentRefMimeType: null,
     lastPlan: null, lastFinalPrompt: null,
     prints: createDefaultPrintsRuntime(),
@@ -239,7 +301,7 @@ function formatKind(kind: string): string {
 }
 
 function uniqueTitle(base: string, storyboards: StoryboardRecord[]): string {
-  const cleanedBase = (base || "").trim() || "Storyboard";
+  const cleanedBase = (base || "").trim() || "Mood Board";
   const existing = new Set(storyboards.map((sb) => sb.title.trim().toLowerCase()).filter(Boolean));
   if (!existing.has(cleanedBase.toLowerCase())) return cleanedBase;
   let n = 2;
@@ -250,6 +312,7 @@ function uniqueTitle(base: string, storyboards: StoryboardRecord[]): string {
 function storyboardSubtitle(sb: StoryboardRecord): string {
   const cfg = sb.config;
   const parts: string[] = [];
+  if (sb.garmentType?.trim()) parts.push(`Garment: ${sb.garmentType.trim()}`);
 
   const occasionPresetLabel = cfg.occasionPreset && cfg.occasionPreset !== "custom"
     ? occasionPresetLabelByValue[cfg.occasionPreset] ?? cfg.occasionPreset : "";
@@ -258,8 +321,7 @@ function storyboardSubtitle(sb: StoryboardRecord): string {
     : combinePresetAndCustom({ presetText: occasionPresetLabel, customText: cfg.occasionDetails, joiner: ", " });
   if (occasion) parts.push(`Occasion: ${occasion}`);
 
-  const color = cfg.colorScheme.trim();
-  if (color) parts.push(`Colors: ${color}`);
+  // color scheme removed
 
   const stylePresetText = cfg.stylePreset && cfg.stylePreset !== "custom"
     ? stylePresetLabelByValue[cfg.stylePreset] ?? cfg.stylePreset : "";
@@ -321,14 +383,14 @@ export default function App() {
 
   const [storyboards, setStoryboards] = useState<StoryboardRecord[]>(() => {
     const loaded = loadStoryboardsFromLocalStorage();
-    const ensured = loaded.length ? loaded : [createStoryboardRecord({ title: "Storyboard 1" })];
+    const ensured = loaded.length ? loaded : [createStoryboardRecord({ title: "Mood Board 1" })];
     try { saveStoryboardsToLocalStorage(ensured); } catch {}
     return ensured;
   });
 
   const [activeStoryboardId, setActiveStoryboardId] = useState<string>(() => {
     const loaded = loadStoryboardsFromLocalStorage();
-    const ensured = loaded.length ? loaded : [createStoryboardRecord({ title: "Storyboard 1" })];
+    const ensured = loaded.length ? loaded : [createStoryboardRecord({ title: "Mood Board 1" })];
     const savedActive = loadActiveStoryboardIdFromLocalStorage();
     const id = savedActive && ensured.some((sb) => sb.id === savedActive) ? savedActive : ensured[0]!.id;
     try { saveActiveStoryboardIdToLocalStorage(id); } catch {}
@@ -337,7 +399,7 @@ export default function App() {
 
   const [storyboardRuntime, setStoryboardRuntime] = useState<Record<string, StoryboardRuntime>>(() => {
     const loaded = loadStoryboardsFromLocalStorage();
-    const ensured = loaded.length ? loaded : [createStoryboardRecord({ title: "Storyboard 1" })];
+    const ensured = loaded.length ? loaded : [createStoryboardRecord({ title: "Mood Board 1" })];
     return Object.fromEntries(ensured.map((sb) => [sb.id, createDefaultRuntime()]));
   });
 
@@ -345,6 +407,15 @@ export default function App() {
   const [imageModal, setImageModal] = useState<{ src: string; title: string; alt: string } | null>(null);
   const [savedImages, setSavedImages] = useState<SavedImageView[]>([]);
   const [saveToast, setSaveToast] = useState({ visible: false, message: "" });
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastIdRef = useRef(0);
+  function showToast(message: string, type: ToastItem["type"] = "success") {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+  }
+  function removeToast(id: number) {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStepIndex, setGenerationStepIndex] = useState(0);
   const [generationElapsedMs, setGenerationElapsedMs] = useState(0);
@@ -374,14 +445,25 @@ export default function App() {
   );
 
   const savedPrints = useMemo(() => savedImages.filter((img) => img.kind === "prints"), [savedImages]);
+
+  // Map storyboard ID → most recent saved "main" image URL (for persistent preview)
+  const savedPreviewByStoryboardId = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const img of [...savedImages].reverse()) {
+      if (img.kind === "main" && img.storyboardId) map[img.storyboardId] = img.url;
+    }
+    return map;
+  }, [savedImages]);
   const assetImages = useMemo(() => savedImages.filter((img) => img.kind?.startsWith("asset-")), [savedImages]);
   const backgroundAssetImages = useMemo(() => savedImages.filter((img) => img.kind === "asset-background"), [savedImages]);
   const modelAssetImages = useMemo(() => savedImages.filter((img) => img.kind === "asset-model"), [savedImages]);
+  const poseAssetImages = useMemo(() => savedImages.filter((img) => img.kind === "asset-pose"), [savedImages]);
 
   const activeTabLabel =
     activeTab === "prints" ? "Add Prints"
     : activeTab === "assets" ? "Uploaded Assets"
     : activeTab === "saved" ? "Saved images"
+    : activeTab === "multiangle" ? "Multi Angle"
     : "Generate Images";
 
   // ── Derived computed values used in generation ────────────────────────────
@@ -495,6 +577,14 @@ export default function App() {
     );
   }
 
+  function handleGarmentTypeChange(value: string) {
+    setStoryboards((prev) =>
+      prev.map((sb) =>
+        sb.id === activeStoryboardId ? { ...sb, garmentType: value, updatedAt: nowIso() } : sb,
+      ),
+    );
+  }
+
   function openStoryboard(id: string) {
     if (isGenerating) return;
     setActiveStoryboardId(id);
@@ -508,7 +598,7 @@ export default function App() {
 
   function createNewStoryboard() {
     setStoryboards((prev) => {
-      const sb = createStoryboardRecord({ title: uniqueTitle(`Storyboard ${prev.length + 1}`, prev) });
+      const sb = createStoryboardRecord({ title: uniqueTitle(`Mood Board ${prev.length + 1}`, prev) });
       setStoryboardRuntime((r) => ({ ...r, [sb.id]: createDefaultRuntime() }));
       setActiveStoryboardId(sb.id);
       setGenerateView("editor");
@@ -519,7 +609,7 @@ export default function App() {
   function duplicateActiveStoryboard() {
     setStoryboards((prev) => {
       const src = prev.find((sb) => sb.id === activeStoryboardId) ?? prev[0]!;
-      const dst = createStoryboardRecord({ title: uniqueTitle(`${src.title} (copy)`, prev), config: { ...src.config } });
+      const dst = createStoryboardRecord({ title: uniqueTitle(`${src.title} (copy)`, prev), garmentType: src.garmentType, config: { ...src.config } });
       const srcRuntime = storyboardRuntime[src.id] ?? createDefaultRuntime();
       setStoryboardRuntime((r) => ({
         ...r,
@@ -531,6 +621,8 @@ export default function App() {
           backgroundFileNames: [...srcRuntime.backgroundFileNames],
           modelDataUrls: [...srcRuntime.modelDataUrls],
           modelFileNames: [...srcRuntime.modelFileNames],
+          poseDataUrls: [...srcRuntime.poseDataUrls],
+          poseFileNames: [...srcRuntime.poseFileNames],
           garmentRefDataUrl: srcRuntime.garmentRefDataUrl,
           garmentRefMimeType: srcRuntime.garmentRefMimeType,
           lastPlan: srcRuntime.lastPlan ? safeClone(srcRuntime.lastPlan) : null,
@@ -668,6 +760,16 @@ export default function App() {
     });
   }
 
+  function removePoseImage(index: number) {
+    const sbId = activeStoryboardId;
+    setStoryboardRuntime((prev) => {
+      const rt = prev[sbId]!;
+      const urls = rt.poseDataUrls.filter((_, i) => i !== index);
+      const names = rt.poseFileNames.filter((_, i) => i !== index);
+      return { ...prev, [sbId]: { ...rt, poseDataUrls: urls, poseFileNames: names } };
+    });
+  }
+
   async function onGarmentFileChange(e: ChangeEvent<HTMLInputElement>) {
     const sbId = activeStoryboardId;
     const input = e.target;
@@ -764,6 +866,38 @@ export default function App() {
     if (input) input.value = "";
   }
 
+  async function onPoseFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const sbId = activeStoryboardId;
+    const input = e.target;
+    const files = Array.from(input?.files ?? []);
+    if (!files.length) { if (input) input.value = ""; return; }
+
+    const rt = storyboardRuntime[sbId];
+    const MAX = 4;
+    const remaining = Math.max(0, MAX - (rt?.poseDataUrls.length ?? 0));
+    if (!remaining) { if (input) input.value = ""; return; }
+
+    const limited = files.slice(0, remaining);
+    const dataUrls = await Promise.all(limited.map((f) => fileToDataUrl(f)));
+    setStoryboardRuntime((prev) => {
+      const r = prev[sbId]!;
+      return {
+        ...prev, [sbId]: {
+          ...r,
+          poseDataUrls: [...r.poseDataUrls, ...dataUrls],
+          poseFileNames: [...r.poseFileNames, ...limited.map((f) => f.name || "pose")],
+        },
+      };
+    });
+
+    for (const file of limited) {
+      await saveImageRecord({ title: file.name || "Uploaded Pose", kind: "asset-pose", mimeType: file.type, blob: file, createdAt: Date.now() })
+        .then((record) => setSavedImages((prev) => [toSavedImageView(record), ...prev]))
+        .catch(console.error);
+    }
+    if (input) input.value = "";
+  }
+
   async function addGarmentFromDataUrl(url: string, fileName: string) {
     const sbId = activeStoryboardId;
     const rt = storyboardRuntime[sbId];
@@ -815,6 +949,20 @@ export default function App() {
     });
   }
 
+  async function addPoseFromDataUrl(url: string, fileName: string) {
+    const sbId = activeStoryboardId;
+    const rt = storyboardRuntime[sbId];
+    if (!rt || rt.poseDataUrls.length >= 4) return;
+    let dataUrl = url;
+    if (url.startsWith("blob:")) {
+      try { const resp = await fetch(url); const blob = await resp.blob(); dataUrl = await fileToDataUrl(new File([blob], fileName, { type: blob.type })); } catch { return; }
+    }
+    setStoryboardRuntime((prev) => {
+      const r = prev[sbId]!;
+      return { ...prev, [sbId]: { ...r, poseDataUrls: [...r.poseDataUrls, dataUrl], poseFileNames: [...r.poseFileNames, fileName] } };
+    });
+  }
+
   // ── Prints handlers ────────────────────────────────────────────────────────
   function resetPrintOutputs(sbId: string) {
     updatePrints(sbId, {
@@ -858,15 +1006,58 @@ export default function App() {
     if (input) input.value = "";
   }
 
-  async function onPrintDesignFileChange(e: ChangeEvent<HTMLInputElement>) {
+  async function onPrintDesignFrontFileChange(e: ChangeEvent<HTMLInputElement>) {
     const sbId = activeStoryboardId;
     const input = e.target;
     const file = input?.files?.[0] ?? null;
     updatePrints(sbId, { error: null });
     if (!file) { if (input) input.value = ""; return; }
-    updatePrints(sbId, { printDesignFileName: file.name || "print-design", printDesignDataUrl: await fileToDataUrl(file) });
-    resetPrintOutputs(sbId);
+    const designDataUrl = await fileToDataUrl(file);
+    updatePrints(sbId, { printDesignFrontFileName: file.name, printDesignFrontDataUrl: designDataUrl });
     if (input) input.value = "";
+    const rt = storyboardRuntime[sbId]!;
+    if (rt.prints.baseGarmentFrontDataUrl) {
+      try {
+        const out = await compositeDesignOnGarment(rt.prints.baseGarmentFrontDataUrl, designDataUrl);
+        updatePrints(sbId, { outputFrontDataUrl: out, outputFrontMimeType: "image/png" });
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function onPrintDesignBackFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const sbId = activeStoryboardId;
+    const input = e.target;
+    const file = input?.files?.[0] ?? null;
+    updatePrints(sbId, { error: null });
+    if (!file) { if (input) input.value = ""; return; }
+    const designDataUrl = await fileToDataUrl(file);
+    updatePrints(sbId, { printDesignBackFileName: file.name, printDesignBackDataUrl: designDataUrl });
+    if (input) input.value = "";
+    const rt = storyboardRuntime[sbId]!;
+    if (rt.prints.baseGarmentBackDataUrl) {
+      try {
+        const out = await compositeDesignOnGarment(rt.prints.baseGarmentBackDataUrl, designDataUrl);
+        updatePrints(sbId, { outputBackDataUrl: out, outputBackMimeType: "image/png" });
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function onPrintDesignSideFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const sbId = activeStoryboardId;
+    const input = e.target;
+    const file = input?.files?.[0] ?? null;
+    updatePrints(sbId, { error: null });
+    if (!file) { if (input) input.value = ""; return; }
+    const designDataUrl = await fileToDataUrl(file);
+    updatePrints(sbId, { printDesignSideFileName: file.name, printDesignSideDataUrl: designDataUrl });
+    if (input) input.value = "";
+    const rt = storyboardRuntime[sbId]!;
+    if (rt.prints.baseGarmentSideDataUrl) {
+      try {
+        const out = await compositeDesignOnGarment(rt.prints.baseGarmentSideDataUrl, designDataUrl);
+        updatePrints(sbId, { outputSideDataUrl: out, outputSideMimeType: "image/png" });
+      } catch { /* ignore */ }
+    }
   }
 
   function removePrintBaseGarmentFront() {
@@ -884,10 +1075,53 @@ export default function App() {
     updatePrints(sbId, { baseGarmentSideDataUrl: null, baseGarmentSideFileName: null, error: null });
     resetPrintOutputs(sbId);
   }
-  function removePrintDesign() {
+  function removePrintDesignFront() {
+    updatePrints(activeStoryboardId, { printDesignFrontDataUrl: null, printDesignFrontFileName: null, outputFrontDataUrl: null, outputFrontMimeType: null, error: null });
+  }
+  function removePrintDesignBack() {
+    updatePrints(activeStoryboardId, { printDesignBackDataUrl: null, printDesignBackFileName: null, outputBackDataUrl: null, outputBackMimeType: null, error: null });
+  }
+  function removePrintDesignSide() {
+    updatePrints(activeStoryboardId, { printDesignSideDataUrl: null, printDesignSideFileName: null, outputSideDataUrl: null, outputSideMimeType: null, error: null });
+  }
+
+  async function loadBuiltInGarmentFront(url: string) {
     const sbId = activeStoryboardId;
-    updatePrints(sbId, { printDesignDataUrl: null, printDesignFileName: null, error: null });
-    resetPrintOutputs(sbId);
+    updatePrints(sbId, { error: null });
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const fileName = url.split("/").pop() || "garment-front";
+      const dataUrl = await fileToDataUrl(new File([blob], fileName, { type: blob.type }));
+      updatePrints(sbId, { baseGarmentFrontDataUrl: dataUrl, baseGarmentFrontFileName: fileName });
+      resetPrintOutputs(sbId);
+    } catch { updatePrints(sbId, { error: "Failed to load built-in template." }); }
+  }
+
+  async function loadBuiltInGarmentBack(url: string) {
+    const sbId = activeStoryboardId;
+    updatePrints(sbId, { error: null });
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const fileName = url.split("/").pop() || "garment-back";
+      const dataUrl = await fileToDataUrl(new File([blob], fileName, { type: blob.type }));
+      updatePrints(sbId, { baseGarmentBackDataUrl: dataUrl, baseGarmentBackFileName: fileName });
+      resetPrintOutputs(sbId);
+    } catch { updatePrints(sbId, { error: "Failed to load built-in template." }); }
+  }
+
+  async function loadBuiltInGarmentSide(url: string) {
+    const sbId = activeStoryboardId;
+    updatePrints(sbId, { error: null });
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const fileName = url.split("/").pop() || "garment-side";
+      const dataUrl = await fileToDataUrl(new File([blob], fileName, { type: blob.type }));
+      updatePrints(sbId, { baseGarmentSideDataUrl: dataUrl, baseGarmentSideFileName: fileName });
+      resetPrintOutputs(sbId);
+    } catch { updatePrints(sbId, { error: "Failed to load built-in template." }); }
   }
 
   function startPrintTimer() {
@@ -905,16 +1139,17 @@ export default function App() {
     const rt = storyboardRuntime[sbId]!;
     updatePrints(sbId, { error: null });
 
+    const isFullCloth = activeConfig.printGarmentCategory === "Saree" || activeConfig.printGarmentCategory === "Dhoti";
+
     if (!rt.prints.baseGarmentFrontDataUrl) { updatePrints(sbId, { error: "Please upload a front view white garment photo." }); return; }
-    if (!rt.prints.baseGarmentBackDataUrl) { updatePrints(sbId, { error: "Please upload a back view white garment photo." }); return; }
-    if (!rt.prints.baseGarmentSideDataUrl) { updatePrints(sbId, { error: "Please upload a side view white garment photo." }); return; }
+    if (!isFullCloth && !rt.prints.baseGarmentBackDataUrl) { updatePrints(sbId, { error: "Please upload a back view white garment photo." }); return; }
 
     const printInputKind = activeConfig.printInputKind;
     const printColorHex = printInputKind === "color" ? normalizeHexColor(activeConfig.printColorHex || "") : null;
     if (printInputKind === "color") {
       if (!printColorHex) { updatePrints(sbId, { error: "Please enter a hex color (e.g. #FF3366)." }); return; }
-    } else if (!rt.prints.printDesignDataUrl) {
-      updatePrints(sbId, { error: "Please upload a print/design image (or switch to Colors)." }); return;
+    } else if (!rt.prints.printDesignFrontDataUrl && !rt.prints.printDesignBackDataUrl && !rt.prints.printDesignSideDataUrl) {
+      updatePrints(sbId, { error: "Please upload at least one print design (front, back, or side)." }); return;
     }
 
     updatePrints(sbId, { generating: true });
@@ -922,8 +1157,7 @@ export default function App() {
     startPrintTimer();
 
     try {
-      const printDesignDataUrl = printInputKind === "color" ? createColorSwatchDataUrl(printColorHex!) : rt.prints.printDesignDataUrl!;
-      const printInline = dataUrlToInlineImage(printDesignDataUrl);
+      const colorSwatch = printInputKind === "color" ? createColorSwatchDataUrl(printColorHex!) : null;
       const prompt = buildPrintApplicationPrompt({
         additionalPrompt: activeConfig.printAdditionalPrompt || "",
         ...(typeof retryComment === "string" ? { retryComment } : {}),
@@ -931,20 +1165,39 @@ export default function App() {
       });
 
       const t0 = performance.now();
-      const [frontOut, backOut, sideOut] = await Promise.all([
-        generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentFrontDataUrl!), printInline], timeoutMs: 180000 }),
-        generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentBackDataUrl!), printInline], timeoutMs: 180000 }),
-        generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentSideDataUrl!), printInline], timeoutMs: 180000 }),
-      ]);
-      const ms = Math.round(performance.now() - t0);
-      updatePrints(sbId, {
-        outputFrontMimeType: frontOut.mimeType, outputFrontDataUrl: `data:${frontOut.mimeType};base64,${frontOut.imageBase64}`,
-        outputBackMimeType: backOut.mimeType, outputBackDataUrl: `data:${backOut.mimeType};base64,${backOut.imageBase64}`,
-        outputSideMimeType: sideOut.mimeType, outputSideDataUrl: `data:${sideOut.mimeType};base64,${sideOut.imageBase64}`,
-        timingsMs: ms,
+      const promises: Promise<any>[] = [];
+      const keys: string[] = [];
+
+      const frontDesign = colorSwatch ?? rt.prints.printDesignFrontDataUrl;
+      const backDesign = colorSwatch ?? rt.prints.printDesignBackDataUrl;
+      const sideDesign = colorSwatch ?? rt.prints.printDesignSideDataUrl;
+
+      if (rt.prints.baseGarmentFrontDataUrl && frontDesign) {
+        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentFrontDataUrl), dataUrlToInlineImage(frontDesign)], timeoutMs: 180000 }));
+        keys.push("front");
+      }
+      if (!isFullCloth && rt.prints.baseGarmentBackDataUrl && backDesign) {
+        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentBackDataUrl), dataUrlToInlineImage(backDesign)], timeoutMs: 180000 }));
+        keys.push("back");
+      }
+      if (!isFullCloth && rt.prints.baseGarmentSideDataUrl && sideDesign) {
+        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentSideDataUrl), dataUrlToInlineImage(sideDesign)], timeoutMs: 180000 }));
+        keys.push("side");
+      }
+
+      const results = await Promise.all(promises);
+      const outputUpdates: Partial<StoryboardPrintsRuntime> & { timingsMs?: number } = {};
+      results.forEach((res, i) => {
+        if (keys[i] === "front") { outputUpdates.outputFrontMimeType = res.mimeType; outputUpdates.outputFrontDataUrl = `data:${res.mimeType};base64,${res.imageBase64}`; }
+        if (keys[i] === "back") { outputUpdates.outputBackMimeType = res.mimeType; outputUpdates.outputBackDataUrl = `data:${res.mimeType};base64,${res.imageBase64}`; }
+        if (keys[i] === "side") { outputUpdates.outputSideMimeType = res.mimeType; outputUpdates.outputSideDataUrl = `data:${res.mimeType};base64,${res.imageBase64}`; }
       });
+      outputUpdates.timingsMs = Math.round(performance.now() - t0);
+      updatePrints(sbId, outputUpdates);
+      showToast("Print generation complete! Your designs are ready.", "success");
     } catch (err: any) {
       updatePrints(sbId, { error: err?.message || String(err) });
+      showToast("Print generation failed. Please try again.", "error");
     } finally {
       updatePrints(sbId, { generating: false });
       stopPrintTimer();
@@ -958,17 +1211,18 @@ export default function App() {
   async function savePrintedGarment() {
     const rt = activeRuntime;
     const sbTitle = activeStoryboard.title;
-    if (!rt.prints.outputFrontDataUrl || !rt.prints.outputBackDataUrl || !rt.prints.outputSideDataUrl) {
+    if (!rt.prints.outputFrontDataUrl) {
       updatePrints(activeStoryboardId, { error: "Generate the printed garments first." }); return;
     }
     try {
       const ts = Date.now();
-      await Promise.all([
-        saveImageToLibrary({ dataUrl: rt.prints.outputFrontDataUrl, mimeType: rt.prints.outputFrontMimeType, title: `Printed garment (front) — ${sbTitle}`, kind: "prints", fileName: `printed-garment-front-${ts}.${mimeToExtension(rt.prints.outputFrontMimeType)}`, notify: false }),
-        saveImageToLibrary({ dataUrl: rt.prints.outputBackDataUrl, mimeType: rt.prints.outputBackMimeType, title: `Printed garment (back) — ${sbTitle}`, kind: "prints", fileName: `printed-garment-back-${ts}.${mimeToExtension(rt.prints.outputBackMimeType)}`, notify: false }),
-        saveImageToLibrary({ dataUrl: rt.prints.outputSideDataUrl, mimeType: rt.prints.outputSideMimeType, title: `Printed garment (side) — ${sbTitle}`, kind: "prints", fileName: `printed-garment-side-${ts}.${mimeToExtension(rt.prints.outputSideMimeType)}`, notify: false }),
-      ]);
-      showSaveToast("Saved 3 printed garments.");
+      const savePromises = [];
+      if (rt.prints.outputFrontDataUrl) savePromises.push(saveImageToLibrary({ dataUrl: rt.prints.outputFrontDataUrl, mimeType: rt.prints.outputFrontMimeType, title: `Printed garment (front) — ${sbTitle}`, kind: "prints", fileName: `printed-garment-front-${ts}.${mimeToExtension(rt.prints.outputFrontMimeType)}`, notify: false }));
+      if (rt.prints.outputBackDataUrl) savePromises.push(saveImageToLibrary({ dataUrl: rt.prints.outputBackDataUrl, mimeType: rt.prints.outputBackMimeType, title: `Printed garment (back) — ${sbTitle}`, kind: "prints", fileName: `printed-garment-back-${ts}.${mimeToExtension(rt.prints.outputBackMimeType)}`, notify: false }));
+      if (rt.prints.outputSideDataUrl) savePromises.push(saveImageToLibrary({ dataUrl: rt.prints.outputSideDataUrl, mimeType: rt.prints.outputSideMimeType, title: `Printed garment (side) — ${sbTitle}`, kind: "prints", fileName: `printed-garment-side-${ts}.${mimeToExtension(rt.prints.outputSideMimeType)}`, notify: false }));
+      
+      await Promise.all(savePromises);
+      showSaveToast(`Saved ${savePromises.length} printed garment${savePromises.length > 1 ? 's' : ''}.`);
     } catch (err: any) {
       updatePrints(activeStoryboardId, { error: err?.message || String(err) });
     }
@@ -1006,7 +1260,6 @@ export default function App() {
 
       const userOverrides = {
         occasion: occasionFinal || null,
-        color_scheme: activeConfig.colorScheme.trim() || null,
         background_theme: backgroundThemeFinal || null,
         footwear: footwearFinal || null,
         model_ethnicity: modelEthnicityFinal || null,
@@ -1019,8 +1272,10 @@ export default function App() {
       const styleKeywords = bw ? [...baseStyleKeywords, bw] : baseStyleKeywords;
       const accessories = activeConfig.accessories.trim() ? parseLocalTags(activeConfig.accessories) : [];
       const modelRefDataUrl = rt.modelDataUrls[0] || null;
+      const poseRefDataUrl = rt.poseDataUrls[0] || null;
       const backgroundRefDataUrl = rt.backgroundDataUrls[0] || null;
       const hasModelReference = Boolean(modelRefDataUrl);
+      const hasPoseReference = Boolean(poseRefDataUrl);
       const hasBackgroundReference = Boolean(backgroundRefDataUrl);
 
       const garmentImages = rt.garmentDataUrls.map((src) => dataUrlToInlineImage(src));
@@ -1042,7 +1297,7 @@ export default function App() {
         planError = err?.message || String(err);
         const ov = userOverrides;
         plan = {
-          occasion: ov.occasion || "casual", color_scheme: ov.color_scheme || "neutral", print_style: "as-is",
+          occasion: ov.occasion || "casual", color_scheme: "neutral", print_style: "as-is",
           style_keywords: [], background_theme: ov.background_theme || ov.occasion || "casual",
           footwear: ov.footwear || "", accessories: [],
           negative_prompt: "blurry, low quality, incorrect garment, altered design, wrong print, extra limbs, deformed hands, text overlay, watermark",
@@ -1078,7 +1333,7 @@ export default function App() {
 
       setGenerationStepIndex(3);
 
-      const compositePrompt = buildCompositePrompt({ plan, finalPrompt: finalPromptRes.prompt, hasModelReference, hasBackgroundReference });
+      const compositePrompt = buildCompositePrompt({ plan, finalPrompt: finalPromptRes.prompt, hasModelReference, hasPoseReference, hasBackgroundReference });
       debug.composite_prompt = compositePrompt;
       debug.negative_prompt = plan.negative_prompt;
 
@@ -1086,6 +1341,7 @@ export default function App() {
       const compositeImages = [
         { mimeType: garmentRef.mimeType, data: base64ToBytes(garmentRef.imageBase64) },
         ...(modelRefDataUrl ? [dataUrlToInlineImage(modelRefDataUrl)] : []),
+        ...(poseRefDataUrl ? [dataUrlToInlineImage(poseRefDataUrl)] : []),
         ...(backgroundRefDataUrl ? [dataUrlToInlineImage(backgroundRefDataUrl)] : []),
       ];
       const composite = await generateImage({
@@ -1108,8 +1364,10 @@ export default function App() {
         resultTimingsMs: timings, chosenSummary,
         debugSummary: { timings_ms: timings, plan_error: planError, ...debug },
       });
+      showToast("Scene generated successfully!", "success");
     } catch (err: any) {
       updateRuntime(sbId, { generateError: err?.message || String(err) });
+      showToast("Scene generation failed. Please try again.", "error");
     } finally {
       setIsGenerating(false);
       stopGenerationTimer();
@@ -1132,7 +1390,7 @@ export default function App() {
 
     try {
       const overrides = {
-        occasion: occasionFinal || null, color_scheme: activeConfig.colorScheme.trim() || null,
+        occasion: occasionFinal || null,
         background_theme: backgroundThemeFinal || null, footwear: footwearFinal || null,
         model_ethnicity: modelEthnicityFinal || null, model_pose: modelPoseFinal || null,
         model_styling_notes: modelStylingNotesFinal || null,
@@ -1140,7 +1398,6 @@ export default function App() {
 
       let plan = { ...rt.lastPlan };
       if ((overrides.occasion || "").trim()) plan.occasion = overrides.occasion!.trim();
-      if ((overrides.color_scheme || "").trim()) plan.color_scheme = overrides.color_scheme!.trim();
       if ((overrides.background_theme || "").trim()) plan.background_theme = overrides.background_theme!.trim();
       if ((overrides.footwear || "").trim()) plan.footwear = overrides.footwear!.trim();
       if ((overrides.model_ethnicity || "").trim()) plan.model_ethnicity = overrides.model_ethnicity!.trim();
@@ -1257,8 +1514,10 @@ export default function App() {
         backMimeType: backRes.res.mimeType, backDataUrl: `data:${backRes.res.mimeType};base64,${backRes.res.imageBase64}`,
         timingsMs: { side: sideRes.ms, back: backRes.ms, total: Math.round(performance.now() - t0) },
       });
+      showToast("Multi-angle generation complete!", "success");
     } catch (err: any) {
       updateAngles(sbId, { error: err?.message || String(err) });
+      showToast("Multi-angle generation failed. Please try again.", "error");
     } finally {
       updateAngles(sbId, { generating: false });
     }
@@ -1326,6 +1585,7 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="appRoot">
+      <Toast toasts={toasts} onRemove={removeToast} />
       <div
         className={`saveToast${saveToast.visible ? " saveToastVisible" : ""}`}
         role="status" aria-live="polite" aria-hidden={!saveToast.visible}
@@ -1340,7 +1600,7 @@ export default function App() {
             <div className="brandTitle">BotStudioX</div>
           </div>
           <nav className="sidebarNav" role="tablist" aria-label="Main sections">
-            {(["prints", "generate", "saved", "assets"] as const).map((tab) => (
+            {(["prints", "generate", "multiangle", "saved", "assets"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -1348,7 +1608,11 @@ export default function App() {
                 aria-selected={activeTab === tab}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === "prints" ? "Add Prints" : tab === "generate" ? "Generate Images" : tab === "saved" ? "Saved images" : "Uploaded Assets"}
+                {tab === "prints" ? "Add Prints"
+                  : tab === "generate" ? "Generate Images"
+                  : tab === "multiangle" ? "Multi Angle"
+                  : tab === "saved" ? "Saved images"
+                  : "Uploaded Assets"}
               </button>
             ))}
           </nav>
@@ -1370,11 +1634,18 @@ export default function App() {
                 onBaseGarmentFrontFileChange={onPrintBaseGarmentFrontFileChange}
                 onBaseGarmentBackFileChange={onPrintBaseGarmentBackFileChange}
                 onBaseGarmentSideFileChange={onPrintBaseGarmentSideFileChange}
-                onPrintDesignFileChange={onPrintDesignFileChange}
+                onLoadBuiltInFront={loadBuiltInGarmentFront}
+                onLoadBuiltInBack={loadBuiltInGarmentBack}
+                onLoadBuiltInSide={loadBuiltInGarmentSide}
+                onPrintDesignFrontFileChange={onPrintDesignFrontFileChange}
+                onPrintDesignBackFileChange={onPrintDesignBackFileChange}
+                onPrintDesignSideFileChange={onPrintDesignSideFileChange}
                 removeBaseGarmentFront={removePrintBaseGarmentFront}
                 removeBaseGarmentBack={removePrintBaseGarmentBack}
                 removeBaseGarmentSide={removePrintBaseGarmentSide}
-                removePrintDesign={removePrintDesign}
+                removePrintDesignFront={removePrintDesignFront}
+                removePrintDesignBack={removePrintDesignBack}
+                removePrintDesignSide={removePrintDesignSide}
                 printElapsedMs={printGenerationElapsedMs}
                 onConfigUpdate={handleConfigUpdate}
                 onGenerate={() => generatePrintedGarment()}
@@ -1391,6 +1662,7 @@ export default function App() {
                     storyboards={storyboards}
                     activeId={activeStoryboardId}
                     runtimeById={storyboardRuntime}
+                    savedPreviewByStoryboardId={savedPreviewByStoryboardId}
                     isGenerating={isGenerating}
                     subtitleFor={storyboardSubtitle}
                     formatTimestamp={formatStoryboardTimestamp}
@@ -1401,6 +1673,7 @@ export default function App() {
                   <div className="storyboardEditorCard">
                     <StoryboardEditorHeader
                       title={activeStoryboard.title}
+                      garmentType={activeStoryboard.garmentType ?? ""}
                       updatedAt={activeStoryboard.updatedAt}
                       disabled={isGenerating}
                       canDelete={storyboards.length > 1}
@@ -1409,6 +1682,7 @@ export default function App() {
                       onDuplicate={duplicateActiveStoryboard}
                       onRequestDelete={requestDeleteActiveStoryboard}
                       onTitleChange={handleTitleChange}
+                      onGarmentTypeChange={handleGarmentTypeChange}
                     />
 
                     <div className="divider storyboardEditorDivider" aria-hidden="true" />
@@ -1424,12 +1698,15 @@ export default function App() {
                           removeGarmentImage={removeGarmentImage}
                           removeBackgroundImage={removeBackgroundImage}
                           removeModelImage={removeModelImage}
+                          removePoseImage={removePoseImage}
                           savedPrints={savedPrints}
                           backgroundAssetImages={backgroundAssetImages}
                           modelAssetImages={modelAssetImages}
+                          poseAssetImages={poseAssetImages}
                           addGarmentFromDataUrl={addGarmentFromDataUrl}
                           addBackgroundFromDataUrl={addBackgroundFromDataUrl}
                           addModelFromDataUrl={addModelFromDataUrl}
+                          addPoseFromDataUrl={addPoseFromDataUrl}
                           onConfigUpdate={handleConfigUpdate}
                           onSubmit={onGenerateLook}
                           onOpenImage={openImageModal}
@@ -1471,129 +1748,24 @@ export default function App() {
             )}
 
             {activeTab === "assets" && (
-              <div className="card">
-                <div className="sectionTitle" style={{ marginTop: 0 }}>Uploaded assets</div>
-                <div className="title" style={{ fontSize: 18, margin: 0 }}>Backgrounds and models</div>
-                <div className="muted" style={{ marginTop: 6 }}>
-                  Upload reference images for the active storyboard. The first background and first model are used during generation.
-                </div>
-
-                <div className="row" style={{ marginTop: 20 }}>
-                  <div>
-                    <FieldLabel htmlFor="assetsBackgroundPhoto" label="Background references" info="Upload 1–4 background images to lock a setting or mood." />
-                    <input id="assetsBackgroundPhoto" type="file" accept="image/*" multiple onChange={onBackgroundFileChange} />
-                    {activeRuntime.backgroundDataUrls.length > 0 && (
-                      <div style={{ marginTop: 12 }}>
-                        <label>Background preview</label>
-                        <div className="preview previewAssets">
-                          {activeRuntime.backgroundDataUrls.map((src, idx) => (
-                            <div key={`${activeStoryboardId}-bg-asset-${idx}`} className="previewItem">
-                              <img src={src} alt={`Background reference ${idx + 1}`} draggable={false} onClick={() => openImageModal(src, "Background reference", "Background reference")} />
-                              <button type="button" className="removePreviewButton" onClick={() => removeBackgroundImage(idx)} aria-label={`Remove background image ${idx + 1}`} title="Remove image">
-                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18" /><path d="M6 6l12 12" /></svg>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <FieldLabel htmlFor="assetsModelPhoto" label="Model references" info="Upload 1–4 model reference images to preserve identity and styling." />
-                    <input id="assetsModelPhoto" type="file" accept="image/*" multiple onChange={onModelFileChange} />
-                    {activeRuntime.modelDataUrls.length > 0 && (
-                      <div style={{ marginTop: 12 }}>
-                        <label>Model preview</label>
-                        <div className="preview previewAssets">
-                          {activeRuntime.modelDataUrls.map((src, idx) => (
-                            <div key={`${activeStoryboardId}-model-asset-${idx}`} className="previewItem">
-                              <img src={src} alt={`Model reference ${idx + 1}`} draggable={false} onClick={() => openImageModal(src, "Model reference", "Model reference")} />
-                              <button type="button" className="removePreviewButton" onClick={() => removeModelImage(idx)} aria-label={`Remove model image ${idx + 1}`} title="Remove image">
-                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 6 6 18" /><path d="M6 6l12 12" /></svg>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="divider" style={{ margin: "32px 0" }} />
-
-                <div className="assetLibrary">
-                  <div className="title" style={{ fontSize: 18, margin: 0 }}>Asset Library</div>
-                  <div className="muted" style={{ marginTop: 6 }}>History of all background and model images you've uploaded.</div>
-
-                  {!assetImages.length ? (
-                    <div className="savedImagesSectionEmpty" style={{ marginTop: 20 }}>
-                      <div className="muted">No assets uploaded yet.</div>
-                    </div>
-                  ) : (
-                    <div>
-                      {backgroundAssetImages.length > 0 && (
-                        <div style={{ marginTop: 20 }}>
-                          <div className="sectionTitle" style={{ margin: "0 0 12px" }}>Backgrounds</div>
-                          <div className="savedImagesGrid compactGrid">
-                            {backgroundAssetImages.map((image) => (
-                              <div key={image.id} className="savedImageCard">
-                                <div className="savedImagePreviewContainer">
-                                  <button type="button" className="savedImagePreview" onClick={() => openImageModal(image.url, image.title)}>
-                                    <img src={image.url} alt={image.title} draggable={false} />
-                                  </button>
-                                  <div className="savedImageOverlay">
-                                    <button type="button" className="overlayButton" onClick={() => openImageModal(image.url, image.title)} title="Maximize">
-                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
-                                    </button>
-                                    <button type="button" className="overlayButton danger" onClick={() => deleteImage(image.id)} title="Delete asset">
-                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className="savedImageMeta">
-                                  <div className="savedImageTitle">{image.title}</div>
-                                  <div className="savedImageSub">{formatKind(image.kind ?? "")}</div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {modelAssetImages.length > 0 && (
-                        <div style={{ marginTop: 20 }}>
-                          <div className="sectionTitle" style={{ margin: "0 0 12px" }}>Models</div>
-                          <div className="savedImagesGrid compactGrid">
-                            {modelAssetImages.map((image) => (
-                              <div key={image.id} className="savedImageCard">
-                                <div className="savedImagePreviewContainer">
-                                  <button type="button" className="savedImagePreview" onClick={() => openImageModal(image.url, image.title)}>
-                                    <img src={image.url} alt={image.title} draggable={false} />
-                                  </button>
-                                  <div className="savedImageOverlay">
-                                    <button type="button" className="overlayButton" onClick={() => openImageModal(image.url, image.title)} title="Maximize">
-                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
-                                    </button>
-                                    <button type="button" className="overlayButton danger" onClick={() => deleteImage(image.id)} title="Delete asset">
-                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-                                    </button>
-                                  </div>
-                                </div>
-                                <div className="savedImageMeta">
-                                  <div className="savedImageTitle">{image.title}</div>
-                                  <div className="savedImageSub">{formatKind(image.kind ?? "")}</div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <AssetsTab
+                activeStoryboardTitle={activeStoryboard.title}
+                activeRuntime={activeRuntime}
+                savedImages={assetImages}
+                formatTimestamp={formatSavedTimestamp}
+                mimeToExtension={mimeToExtension}
+                onBackgroundFileChange={onBackgroundFileChange}
+                onModelFileChange={onModelFileChange}
+                onPoseFileChange={onPoseFileChange}
+                removeBackgroundImage={removeBackgroundImage}
+                removeModelImage={removeModelImage}
+                removePoseImage={removePoseImage}
+                onOpenImage={openImageModal}
+                onDeleteImage={deleteImage}
+              />
             )}
+
+            {activeTab === "multiangle" && <MultiAngleTab />}
           </div>
         </main>
       </div>

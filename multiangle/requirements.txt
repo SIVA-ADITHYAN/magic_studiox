@@ -1,0 +1,6 @@
+fastapi>=0.115.0
+gradio>=5.27.0
+gradio_client>=1.4.0
+Pillow>=10.0.0
+python-multipart>=0.0.9
+uvicorn>=0.30.0

@@ -4,6 +4,7 @@ import PillRadioGroup from "./PillRadioGroup";
 import type { StoryboardConfig } from "../lib/storyboards";
 import { modelTemplates, type ModelTemplate } from "../lib/modelLibrary";
 import { backgroundTemplates, type BackgroundTemplate } from "../lib/backgroundLibrary";
+import { poseTemplates, type PoseTemplate } from "../lib/poseLibrary";
 import {
   backgroundThemeOptions,
   footwearPresetOptions,
@@ -18,9 +19,8 @@ type RuntimeLite = {
   garmentFileNames: string[];
   backgroundDataUrls: string[];
   modelDataUrls: string[];
+  poseDataUrls: string[];
   generateError: string | null;
-  chosenSummary: any;
-  debugSummary: any;
 };
 
 type SavedPrint = { id: string; url: string; title: string; fileName?: string };
@@ -37,6 +37,7 @@ const bottomWearPresetOptions = [
 ];
 
 const accessoriesPresetOptions = [
+  { value: "none", label: "Nil" },
   { value: "studs", label: "Studs" },
   { value: "resin bracelets", label: "Resin bracelets" },
   { value: "earrings", label: "Earrings" },
@@ -63,12 +64,15 @@ interface StoryboardFormCardsProps {
   removeGarmentImage: (idx: number) => void;
   removeBackgroundImage: (idx: number) => void;
   removeModelImage: (idx: number) => void;
+  removePoseImage: (idx: number) => void;
   savedPrints: SavedPrint[];
   backgroundAssetImages: SavedPrint[];
   modelAssetImages: SavedPrint[];
+  poseAssetImages: SavedPrint[];
   addGarmentFromDataUrl: (url: string, fileName: string) => void;
   addBackgroundFromDataUrl: (url: string, fileName: string) => void;
   addModelFromDataUrl: (url: string, fileName: string) => void;
+  addPoseFromDataUrl: (url: string, fileName: string) => void;
   onSubmit: () => void;
   onOpenImage: (src: string, title: string, alt?: string) => void;
 }
@@ -83,31 +87,59 @@ export default function StoryboardFormCards({
   removeGarmentImage,
   removeBackgroundImage,
   removeModelImage,
+  removePoseImage,
   savedPrints,
   backgroundAssetImages,
   modelAssetImages,
+  poseAssetImages,
   addGarmentFromDataUrl,
   addBackgroundFromDataUrl,
   addModelFromDataUrl,
+  addPoseFromDataUrl,
   onSubmit,
   onOpenImage,
 }: StoryboardFormCardsProps) {
   const [showSavedPrints, setShowSavedPrints] = useState(false);
   const [showSavedBackgrounds, setShowSavedBackgrounds] = useState(false);
   const [showSavedModels, setShowSavedModels] = useState(false);
+  const [showSavedPoses, setShowSavedPoses] = useState(false);
   const [modelTab, setModelTab] = useState<"template" | "custom">("template");
   const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
   const [bgTab, setBgTab] = useState<"template" | "custom">("template");
   const [isLoadingBgTemplate, setIsLoadingBgTemplate] = useState(false);
+  const [poseTab, setPoseTab] = useState<"template" | "custom">("template");
+  const [isLoadingPoseTemplate, setIsLoadingPoseTemplate] = useState(false);
+  const [bgCategoryFilter, setBgCategoryFilter] = useState<string>("");
+  const [modelEthnicityFilter, setModelEthnicityFilter] = useState<string>("");
 
-  const bgTemplatesByCategory = useMemo(() => {
-    const map = new Map<string, BackgroundTemplate[]>();
-    for (const t of backgroundTemplates) {
+  const bgCategories = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of backgroundTemplates) seen.add(t.category);
+    return Array.from(seen);
+  }, []);
+
+  const filteredBgTemplates = useMemo(() => {
+    if (!bgCategoryFilter) return backgroundTemplates;
+    return backgroundTemplates.filter((t) => t.category === bgCategoryFilter);
+  }, [bgCategoryFilter]);
+
+  const modelEthnicities = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of modelTemplates) seen.add(t.ethnicityLabel);
+    return Array.from(seen);
+  }, []);
+
+  const filteredModelsByCategory = useMemo(() => {
+    const filtered = modelEthnicityFilter
+      ? modelTemplates.filter((t) => t.ethnicityLabel === modelEthnicityFilter)
+      : modelTemplates;
+    const map = new Map<string, ModelTemplate[]>();
+    for (const t of filtered) {
       if (!map.has(t.category)) map.set(t.category, []);
       map.get(t.category)!.push(t);
     }
     return map;
-  }, []);
+  }, [modelEthnicityFilter]);
 
   const handleSelectBgTemplate = async (tmpl: BackgroundTemplate) => {
     if (!tmpl.url) {
@@ -139,14 +171,6 @@ export default function StoryboardFormCards({
     }
   };
 
-  const templatesByCategory = useMemo(() => {
-    const map = new Map<string, ModelTemplate[]>();
-    for (const t of modelTemplates) {
-      if (!map.has(t.category)) map.set(t.category, []);
-      map.get(t.category)!.push(t);
-    }
-    return map;
-  }, []);
 
   const handleSelectTemplate = async (tmpl: ModelTemplate) => {
     setIsLoadingTemplate(true);
@@ -171,6 +195,50 @@ export default function StoryboardFormCards({
       alert("Failed to load template model. Please try again.");
     } finally {
       setIsLoadingTemplate(false);
+    }
+  };
+
+  const poseTemplatesByCategory = useMemo(() => {
+    const map = new Map<string, PoseTemplate[]>();
+    for (const t of poseTemplates) {
+      if (!map.has(t.category)) map.set(t.category, []);
+      map.get(t.category)!.push(t);
+    }
+    return map;
+  }, []);
+
+  const handleSelectPoseTemplate = async (tmpl: PoseTemplate) => {
+    if (!tmpl.url) {
+      // Use Placeholder text fallback since image might not exist yet
+      onConfigUpdate({
+        modelPosePreset: "custom",
+        modelPoseDetails: tmpl.poseKeyword
+      });
+      alert(`Pose selected: ${tmpl.label}. Image generation for templates is pending, but the pose will be applied!`);
+      return;
+    }
+    setIsLoadingPoseTemplate(true);
+    try {
+      const baseUrl = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+      const fullUrl = baseUrl + tmpl.url;
+      const res = await fetch(fullUrl);
+      const blob = await res.blob();
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const b64 = reader.result as string;
+        addPoseFromDataUrl(b64, `pose_template_${tmpl.id}.png`);
+        
+        onConfigUpdate({
+          modelPosePreset: "custom",
+          modelPoseDetails: tmpl.poseKeyword
+        });
+      };
+      reader.readAsDataURL(blob);
+    } catch(e) {
+      console.error("Failed to load pose template", e);
+      alert("Failed to load template pose. Please try again.");
+    } finally {
+      setIsLoadingPoseTemplate(false);
     }
   };
 
@@ -209,8 +277,14 @@ export default function StoryboardFormCards({
           <div className="parameterSection">
             <div className="sectionTitle" style={{ marginTop: 0 }}>Garment photos</div>
             <div>
-              <FieldLabel htmlFor="garmentPhoto" label="Photos" info="Upload 1–4 photos of the SAME garment." />
-              <input id="garmentPhoto" type="file" accept="image/*" multiple onChange={onGarmentFileChange} />
+              <FieldLabel label="Photos" info="Upload 1–4 photos of the SAME garment." />
+              <label htmlFor="garmentPhoto" className="btnSecondary" style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 4 }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                Upload photos
+              </label>
+              <input id="garmentPhoto" type="file" accept="image/*" multiple onChange={onGarmentFileChange} style={{ display: "none" }} />
             </div>
 
             {runtime.garmentDataUrls.length > 0 && (
@@ -272,9 +346,6 @@ export default function StoryboardFormCards({
             <div style={{ height: 40 }} />
 
             <div>
-              <FieldLabel label="Color scheme" info="Overall color palette for the scene." />
-              <input className="control" type="text" value={config.colorScheme} onChange={(e) => onConfigUpdate({ colorScheme: e.target.value })} placeholder="e.g. red & white, pastel, neutral, monochrome" />
-              <div style={{ height: 40 }} />
               <FieldLabel label="Accessories" info="Optional add-ons." />
               <div className="pillGroup" role="group" aria-label="Accessories presets" style={{ marginTop: 8 }}>
                 {accessoriesPresetOptions.map((opt) => (
@@ -324,25 +395,35 @@ export default function StoryboardFormCards({
 
             {bgTab === "template" && (
               <div className="templateModelsSection" style={{ marginBottom: 24, padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "8px" }}>
-                <div style={{ marginBottom: 16 }} className="muted">Choose a pre-built background. It will automatically set your scene environment.</div>
-                {Array.from(bgTemplatesByCategory.entries()).map(([cat, templates]) => (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.6)" }}>{cat}</div>
-                    <div className="preview previewAssets">
-                      {templates.map(tmpl => (
-                        <div key={tmpl.id} className="previewItem" style={{ cursor: tmpl.url ? "pointer" : "not-allowed", opacity: tmpl.url ? 1 : 0.4 }} onClick={() => handleSelectBgTemplate(tmpl)} title={tmpl.label}>
-                          {tmpl.url ? (
-                            <img src={(import.meta.env.BASE_URL || "/").replace(/\/$/, '') + tmpl.url} alt={tmpl.label} draggable={false} />
-                          ) : (
-                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", background: "#333", color: "#888", textAlign: "center" }}>
-                              {tmpl.label}
-                            </div>
-                          )}
+                <div style={{ marginBottom: 12 }} className="muted">Choose a pre-built background. It will automatically set your scene environment.</div>
+                <div className="pillGroup" role="group" aria-label="Background category" style={{ marginBottom: 14 }}>
+                  <button
+                    type="button"
+                    className={["garmentFilterPill", !bgCategoryFilter ? "garmentFilterPillActive" : ""].filter(Boolean).join(" ")}
+                    onClick={() => setBgCategoryFilter("")}
+                  >All</button>
+                  {bgCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={["garmentFilterPill", bgCategoryFilter === cat ? "garmentFilterPillActive" : ""].filter(Boolean).join(" ")}
+                      onClick={() => setBgCategoryFilter(bgCategoryFilter === cat ? "" : cat)}
+                    >{cat}</button>
+                  ))}
+                </div>
+                <div className="preview previewAssets">
+                  {filteredBgTemplates.map((tmpl) => (
+                    <div key={tmpl.id} className="previewItem" style={{ cursor: tmpl.url ? "pointer" : "not-allowed", opacity: tmpl.url ? 1 : 0.4 }} onClick={() => handleSelectBgTemplate(tmpl)} title={tmpl.label}>
+                      {tmpl.url ? (
+                        <img src={(import.meta.env.BASE_URL || "/").replace(/\/$/, '') + tmpl.url} alt={tmpl.label} draggable={false} />
+                      ) : (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", background: "#333", color: "#888", textAlign: "center" }}>
+                          {tmpl.label}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
                 {isLoadingBgTemplate && <div className="muted" style={{ marginTop: 8 }}>Loading template...</div>}
               </div>
             )}
@@ -357,6 +438,24 @@ export default function StoryboardFormCards({
                 </div>
 
                 <div className="chooseFromAssets" style={{ marginTop: 16 }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <FieldLabel label="Upload Custom Background" info="Upload an image to serve as the background directly." />
+                    <label htmlFor={`upload-bg-${activeStoryboardId}`} className="btnSecondary" style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 4 }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Upload image
+                    </label>
+                    <input id={`upload-bg-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => addBackgroundFromDataUrl(reader.result as string, file.name);
+                      reader.readAsDataURL(file);
+                      e.target.value = "";
+                    }} />
+                  </div>
+
                   <button type="button" className="toggle-assets-btn" onClick={() => setShowSavedBackgrounds((v) => !v)}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                       style={{ transform: showSavedBackgrounds ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
@@ -417,13 +516,28 @@ export default function StoryboardFormCards({
 
             {modelTab === "template" && (
               <div className="templateModelsSection" style={{ marginBottom: 24, padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "8px" }}>
-                <div style={{ marginBottom: 16 }} className="muted">Choose a pre-built character. We will generate the look on this exact person.</div>
-                {Array.from(templatesByCategory.entries()).map(([cat, templates]) => (
+                <div style={{ marginBottom: 12 }} className="muted">Choose a pre-built character. We will generate the look on this exact person.</div>
+                <div className="pillGroup" role="group" aria-label="Model ethnicity filter" style={{ marginBottom: 14 }}>
+                  <button
+                    type="button"
+                    className={["garmentFilterPill", !modelEthnicityFilter ? "garmentFilterPillActive" : ""].filter(Boolean).join(" ")}
+                    onClick={() => setModelEthnicityFilter("")}
+                  >All</button>
+                  {modelEthnicities.map((eth) => (
+                    <button
+                      key={eth}
+                      type="button"
+                      className={["garmentFilterPill", modelEthnicityFilter === eth ? "garmentFilterPillActive" : ""].filter(Boolean).join(" ")}
+                      onClick={() => setModelEthnicityFilter(modelEthnicityFilter === eth ? "" : eth)}
+                    >{eth}</button>
+                  ))}
+                </div>
+                {Array.from(filteredModelsByCategory.entries()).map(([cat, templates]) => (
                   <div key={cat} style={{ marginBottom: 16 }}>
                     <div style={{ fontWeight: 600, marginBottom: 8, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.6)" }}>{cat}</div>
                     <div className="preview previewAssets">
-                      {templates.map(tmpl => (
-                        <div key={tmpl.id} className="previewItem" style={{ cursor: "pointer" }} onClick={() => handleSelectTemplate(tmpl)} title={tmpl.label}>
+                      {templates.map((tmpl) => (
+                        <div key={tmpl.id} className="previewItem" style={{ cursor: "pointer" }} onClick={() => handleSelectTemplate(tmpl)} title={`${tmpl.label} — ${tmpl.ethnicityLabel}`}>
                           <img src={(import.meta.env.BASE_URL || "/").replace(/\/$/, '') + tmpl.url} alt={tmpl.label} draggable={false} />
                         </div>
                       ))}
@@ -444,6 +558,24 @@ export default function StoryboardFormCards({
                 </div>
 
                 <div className="chooseFromAssets" style={{ marginTop: 16 }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <FieldLabel label="Upload Custom Model" info="Upload an image to serve as the model directly." />
+                    <label htmlFor={`upload-model-${activeStoryboardId}`} className="btnSecondary" style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 4 }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Upload image
+                    </label>
+                    <input id={`upload-model-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => addModelFromDataUrl(reader.result as string, file.name);
+                      reader.readAsDataURL(file);
+                      e.target.value = "";
+                    }} />
+                  </div>
+
                   <button type="button" className="toggle-assets-btn" onClick={() => setShowSavedModels((v) => !v)}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                       style={{ transform: showSavedModels ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
@@ -486,12 +618,113 @@ export default function StoryboardFormCards({
               </div>
             )}
 
-            <div>
-              <FieldLabel label="Model pose" info="Choose a natural ecommerce pose." />
-              <PillRadioGroup name="modelPose" value={config.modelPosePreset} options={modelPosePresetOptions} onChange={(v) => onConfigUpdate({ modelPosePreset: v })} />
-              <div style={{ height: 14 }} />
-              <input className="control" type="text" value={config.modelPoseDetails} onChange={(e) => onConfigUpdate({ modelPoseDetails: e.target.value })} placeholder="Optional: add pose details" />
+            <div className="sectionTitle" style={{ marginTop: 24 }}>Model Pose</div>
+
+            <div className="pillGroup" role="group" aria-label="Pose Reference Type" style={{ marginBottom: 16 }}>
+              <label className="pill">
+                <input type="radio" value="template" checked={poseTab === "template"} onChange={() => setPoseTab("template")} />
+                <span>Template Poses</span>
+              </label>
+              <label className="pill">
+                <input type="radio" value="custom" checked={poseTab === "custom"} onChange={() => setPoseTab("custom")} />
+                <span>Custom Pose</span>
+              </label>
             </div>
+
+            {poseTab === "template" && (
+              <div className="templateModelsSection" style={{ marginBottom: 24, padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "8px" }}>
+                <div style={{ marginBottom: 16 }} className="muted">Choose a mannequin pose template to guide the generation.</div>
+                {Array.from(poseTemplatesByCategory.entries()).map(([cat, templates]) => (
+                  <div key={cat} style={{ marginBottom: 16 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.6)" }}>{cat}</div>
+                    <div className="preview previewAssets">
+                      {templates.map(tmpl => (
+                        <div key={tmpl.id} className="previewItem" onClick={() => handleSelectPoseTemplate(tmpl)} title={tmpl.label}>
+                          {tmpl.url ? (
+                            <img src={(import.meta.env.BASE_URL || "/").replace(/\/$/, '') + tmpl.url} alt={tmpl.label} draggable={false} />
+                          ) : (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", background: "#333", color: "#888", textAlign: "center", minHeight: "120px" }}>
+                              {tmpl.label}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {isLoadingPoseTemplate && <div className="muted" style={{ marginTop: 8 }}>Loading pose template...</div>}
+              </div>
+            )}
+
+            {poseTab === "custom" && (
+              <div className="customModelSection" style={{ marginBottom: 24, padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "8px" }}>
+                <div>
+                  <FieldLabel label="Model pose fallback" info="Text pose instruction in case visual reference isn't enough." />
+                  <PillRadioGroup name="modelPose" value={config.modelPosePreset} options={modelPosePresetOptions} onChange={(v) => onConfigUpdate({ modelPosePreset: v })} />
+                  <div style={{ height: 14 }} />
+                  <input className="control" type="text" value={config.modelPoseDetails} onChange={(e) => onConfigUpdate({ modelPoseDetails: e.target.value })} placeholder="Optional: add pose details manually" />
+                </div>
+
+                <div className="chooseFromAssets" style={{ marginTop: 16 }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <FieldLabel label="Upload Custom Pose" info="Upload an image to serve as the exact pose reference." />
+                    <label htmlFor={`upload-pose-${activeStoryboardId}`} className="btnSecondary" style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 4 }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Upload image
+                    </label>
+                    <input id={`upload-pose-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => addPoseFromDataUrl(reader.result as string, file.name);
+                      reader.readAsDataURL(file);
+                      e.target.value = "";
+                    }} />
+                  </div>
+
+                  <button type="button" className="toggle-assets-btn" onClick={() => setShowSavedPoses((v) => !v)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      style={{ transform: showSavedPoses ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                    <span>Choose from Uploaded Poses</span>
+                  </button>
+                  {showSavedPoses && poseAssetImages.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <label>Saved Poses</label>
+                      <div className="preview previewAssets">
+                        {poseAssetImages.map((asset, idx) => (
+                          <div key={asset.id} className="previewItem" onClick={() => addPoseFromDataUrl(asset.url, asset.fileName || `pose-asset-${idx}.png`)} title="Click to add as pose">
+                            <img src={asset.url} alt={asset.title} draggable={false} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {showSavedPoses && !poseAssetImages.length && (
+                    <div className="muted" style={{ marginTop: 8 }}>No uploaded poses found. Go to "Uploaded Assets" to add some.</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {runtime.poseDataUrls && runtime.poseDataUrls.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <label>Selected Pose Reference</label>
+                <div className="preview previewAssets">
+                  {runtime.poseDataUrls.map((src, idx) => (
+                    <div key={`${activeStoryboardId}-pose-ref-${idx}`} className="previewItem">
+                      <img src={src} alt={`Pose reference ${idx + 1}`} draggable={false} onClick={() => onOpenImage(src, "Pose reference", "Pose reference")} />
+                      <button type="button" className="removePreviewButton" onClick={() => removePoseImage(idx)} aria-label={`Remove pose image ${idx + 1}`} title="Remove image">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={{ height: 40 }} />
 
@@ -510,50 +743,9 @@ export default function StoryboardFormCards({
               <button type="submit" className="btnPrimary" disabled={isGenerating}>
                 {isGenerating ? "Generating..." : "Generate look"}
               </button>
-              <button
-                type="button"
-                className="btnGhost"
-                aria-pressed={config.includeDebugStr === "yes"}
-                disabled={isGenerating}
-                onClick={() => onConfigUpdate({ includeDebugStr: config.includeDebugStr === "yes" ? "no" : "yes" })}
-                title="Show/hide the internal prompts used for generation."
-              >
-                {config.includeDebugStr === "yes" ? "Debug off" : "Debug"}
-              </button>
             </div>
 
             {runtime.generateError && <div className="error">{runtime.generateError}</div>}
-
-            {runtime.chosenSummary && (
-              <div style={{ marginTop: 12 }}>
-                <label>Chosen plan</label>
-                <pre className="muted" style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(runtime.chosenSummary, null, 2)}</pre>
-              </div>
-            )}
-
-            {runtime.debugSummary && config.includeDebugStr === "yes" && (
-              <div style={{ marginTop: 12 }}>
-                <label>Prompts</label>
-                {runtime.debugSummary.final_prompt && (
-                  <div style={{ marginTop: 10 }}>
-                    <div className="muted" style={{ marginBottom: 6 }}>Text prompt (LLM output)</div>
-                    <pre className="muted" style={{ whiteSpace: "pre-wrap" }}>{runtime.debugSummary.final_prompt}</pre>
-                  </div>
-                )}
-                {runtime.debugSummary.composite_prompt && (
-                  <div style={{ marginTop: 10 }}>
-                    <div className="muted" style={{ marginBottom: 6 }}>Image prompt (composite)</div>
-                    <pre className="muted" style={{ whiteSpace: "pre-wrap" }}>{runtime.debugSummary.composite_prompt}</pre>
-                  </div>
-                )}
-                {runtime.debugSummary.negative_prompt && (
-                  <div style={{ marginTop: 10 }}>
-                    <div className="muted" style={{ marginBottom: 6 }}>Avoid</div>
-                    <pre className="muted" style={{ whiteSpace: "pre-wrap" }}>{runtime.debugSummary.negative_prompt}</pre>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </fieldset>

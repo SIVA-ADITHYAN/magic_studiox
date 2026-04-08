@@ -1,5 +1,23 @@
 import { normalizeHexColor, nowIso, randomId } from "./utils";
 
+// Garment types sourced from PrintsTab (Male + Female combined, unique)
+export const GARMENT_TYPES = [
+  "T-shirt",
+  "Shirt",
+  "Pant",
+  "Jeans",
+  "Shorts",
+  "Jacket",
+  "Hoodie",
+  "Sweater",
+  "Blazer",
+  "Skirt",
+  "Gown",
+  "Saree",
+  "Salwar Kameez",
+  "Dhoti",
+] as const;
+
 export const STORYBOARDS_STORAGE_KEY = "esg_storyboards_v1";
 export const ACTIVE_STORYBOARD_ID_KEY = "esg_active_storyboard_id_v1";
 
@@ -61,13 +79,14 @@ const MODEL_STYLING_PRESET_VALUES = {
 export type StoryboardConfig = {
   occasionPreset: string;
   occasionDetails: string;
-  colorScheme: string;
   accessories: string;
   bottomWearPreset: string;
   bottomWearDetails: string;
   printInputKind: "image" | "color";
   printColorHex: string;
   printAdditionalPrompt: string;
+  printTargetGender: "Male" | "Female";
+  printGarmentCategory: string;
   footwearPreset: string;
   footwearDetails: string;
   stylePreset: string;
@@ -80,12 +99,12 @@ export type StoryboardConfig = {
   modelPoseDetails: string;
   modelStylingPreset: string;
   modelStylingNotes: string;
-  includeDebugStr: "no" | "yes";
 };
 
 export type StoryboardRecord = {
   id: string;
   title: string;
+  garmentType: string; // e.g. "T-shirt", "Saree", or custom text
   createdAt: string;
   updatedAt: string;
   config: StoryboardConfig;
@@ -96,13 +115,14 @@ export function createDefaultStoryboardConfig(): StoryboardConfig {
   return {
     occasionPreset: "",
     occasionDetails: "",
-    colorScheme: "",
     accessories: "",
     bottomWearPreset: "",
     bottomWearDetails: "",
     printInputKind: "image",
     printColorHex: "",
     printAdditionalPrompt: "",
+    printTargetGender: "Male",
+    printGarmentCategory: "T-shirt",
     footwearPreset: "",
     footwearDetails: "",
     stylePreset: "",
@@ -115,7 +135,6 @@ export function createDefaultStoryboardConfig(): StoryboardConfig {
     modelPoseDetails: "",
     modelStylingPreset: "",
     modelStylingNotes: "",
-    includeDebugStr: "no",
   };
 }
 
@@ -241,7 +260,6 @@ function normalizeModelStylingPreset(value: string): string {
 function normalizeConfig(value: unknown): StoryboardConfig {
   const base = createDefaultStoryboardConfig();
   const raw = (value ?? {}) as Record<string, unknown>;
-  const includeDebugStr = asString(raw.includeDebugStr);
   const printInputKind = asString(raw.printInputKind);
   const normalizedPrintInputKind = printInputKind === "color" ? "color" : "image";
   const printColorHexRaw = asString(raw.printColorHex) ?? base.printColorHex;
@@ -249,13 +267,14 @@ function normalizeConfig(value: unknown): StoryboardConfig {
   return {
     occasionPreset: normalizeOccasionPreset(asString(raw.occasionPreset) ?? base.occasionPreset),
     occasionDetails: asString(raw.occasionDetails) ?? base.occasionDetails,
-    colorScheme: asString(raw.colorScheme) ?? base.colorScheme,
     accessories: asString(raw.accessories) ?? base.accessories,
     bottomWearPreset: asString(raw.bottomWearPreset) ?? base.bottomWearPreset,
     bottomWearDetails: asString(raw.bottomWearDetails) ?? base.bottomWearDetails,
     printInputKind: normalizedPrintInputKind,
     printColorHex: normalizedPrintColorHex,
     printAdditionalPrompt: asString(raw.printAdditionalPrompt) ?? base.printAdditionalPrompt,
+    printTargetGender: (asString(raw.printTargetGender) === "Female" ? "Female" : "Male") as "Male" | "Female",
+    printGarmentCategory: asString(raw.printGarmentCategory) ?? base.printGarmentCategory,
     footwearPreset: normalizeFootwearPreset(asString(raw.footwearPreset) ?? base.footwearPreset),
     footwearDetails: asString(raw.footwearDetails) ?? base.footwearDetails,
     stylePreset: normalizeStylePreset(asString(raw.stylePreset) ?? base.stylePreset),
@@ -270,7 +289,6 @@ function normalizeConfig(value: unknown): StoryboardConfig {
     modelPoseDetails: asString(raw.modelPoseDetails) ?? base.modelPoseDetails,
     modelStylingPreset: normalizeModelStylingPreset(asString(raw.modelStylingPreset) ?? base.modelStylingPreset),
     modelStylingNotes: asString(raw.modelStylingNotes) ?? base.modelStylingNotes,
-    includeDebugStr: includeDebugStr === "yes" ? "yes" : "no",
   };
 }
 
@@ -280,21 +298,24 @@ function normalizeStoryboard(value: unknown): StoryboardRecord | null {
   if (!id) return null;
 
   const title = asString(raw.title) ?? "Untitled";
+  const garmentType = asString(raw.garmentType) ?? "";
   const createdAt = asString(raw.createdAt) ?? nowIso();
   const updatedAt = asString(raw.updatedAt) ?? createdAt;
   const config = normalizeConfig(raw.config);
   const previewDataUrl = asString(raw.previewDataUrl) ?? undefined;
-  return { id, title, createdAt, updatedAt, config, previewDataUrl };
+  return { id, title, garmentType, createdAt, updatedAt, config, previewDataUrl };
 }
 
 export function createStoryboardRecord(opts?: {
   title?: string;
+  garmentType?: string;
   config?: Partial<StoryboardConfig>;
 }): StoryboardRecord {
   const createdAt = nowIso();
   return {
     id: randomId(),
     title: (opts?.title || "").trim() || "New storyboard",
+    garmentType: (opts?.garmentType || "").trim(),
     createdAt,
     updatedAt: createdAt,
     config: {
