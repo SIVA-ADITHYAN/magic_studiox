@@ -15,14 +15,14 @@ interface SavedImagesPaneProps {
   images: SavedImageView[];
   formatTimestamp: (value: number) => string;
   mimeToExtension: (mimeType: string | null) => string;
-  onOpenImage: (src: string, title: string, alt?: string) => void;
+  onOpenImage: (src: string, title: string, alt?: string, gallery?: Array<{ src: string; title: string; alt?: string }>) => void;
   onDeleteImage: (id: string) => void;
 }
 
 // Only show non-asset saved images (generated outputs)
 const SAVED_CATEGORIES = [
   { key: "all",    label: "All",             kinds: null },
-  { key: "looks",  label: "Generated Looks", kinds: ["main", "side", "back"] },
+  { key: "looks",  label: "Generated Looks", kinds: ["main", "side", "back", "detail"] },
   { key: "prints", label: "Prints",          kinds: ["prints"] },
 ] as const;
 
@@ -32,6 +32,7 @@ function kindLabel(kind: string | undefined): string {
   if (kind === "main")   return "Look";
   if (kind === "side")   return "Side view";
   if (kind === "back")   return "Back view";
+  if (kind === "detail") return "Detail shot";
   if (kind === "prints") return "Print";
   return (kind || "").replace(/_/g, " ");
 }
@@ -114,13 +115,15 @@ export default function SavedImagesPane({
         </div>
       ) : (
         <div className="atLibraryGrid" style={{ marginTop: 20 }}>
-          {filtered.map((image) => (
+          {filtered.map((image) => {
+            const gallery = filtered.map((img) => ({ src: img.url, title: img.title, alt: img.title }));
+            return (
             <div key={image.id} className="atLibraryCard">
               <div className="atLibraryCardPreviewWrap">
                 <button
                   type="button"
                   className="atLibraryCardPreview"
-                  onClick={() => onOpenImage(image.url, image.title, image.title)}
+                  onClick={() => onOpenImage(image.url, image.title, image.title, gallery)}
                   aria-label={`Open ${image.title}`}
                 >
                   <img src={image.url} alt={image.title} draggable={false} />
@@ -131,7 +134,7 @@ export default function SavedImagesPane({
                   <button
                     type="button"
                     className="atLibraryOverlayBtn"
-                    onClick={() => onOpenImage(image.url, image.title, image.title)}
+                    onClick={() => onOpenImage(image.url, image.title, image.title, gallery)}
                     title="View full size"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -176,7 +179,8 @@ export default function SavedImagesPane({
                 <div className="atLibraryCardDate">{formatTimestamp(image.createdAt)}</div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

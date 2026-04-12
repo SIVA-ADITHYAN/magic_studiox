@@ -11,7 +11,9 @@ type AnglesRuntime = {
   sideMimeType: string | null;
   backDataUrl: string | null;
   backMimeType: string | null;
-  timingsMs: { side: number; back: number; total: number } | null;
+  detailDataUrl: string | null;
+  detailMimeType: string | null;
+  timingsMs: { side: number; back: number; detail: number; total: number } | null;
 };
 
 type RuntimeLite = {
@@ -32,7 +34,7 @@ interface StoryboardResultsPaneProps {
   mimeToExtension: (mimeType: string | null) => string;
   onResultImagePointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
   onResultImagePointerLeave: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onOpenImage: (src: string, title: string, alt?: string) => void;
+  onOpenImage: (src: string, title: string, alt?: string, gallery?: Array<{ src: string; title: string; alt?: string }>) => void;
   onSaveImage: () => void;
   onRetry: (comment: string) => void;
   onGenerateAngles: () => void;
@@ -60,6 +62,16 @@ export default function StoryboardResultsPane({
 }: StoryboardResultsPaneProps) {
   const [retryOpen, setRetryOpen] = useState(false);
   const [retryComments, setRetryComments] = useState("");
+
+  // Build gallery from all available result images for prev/next navigation
+  function buildResultGallery() {
+    return [
+      runtime.resultDataUrl        && { src: runtime.resultDataUrl,           title: "Generated look", alt: "Generated look" },
+      runtime.angles.sideDataUrl   && { src: runtime.angles.sideDataUrl,      title: "Side view",      alt: "Generated side view" },
+      runtime.angles.backDataUrl   && { src: runtime.angles.backDataUrl,      title: "Back view",      alt: "Generated back view" },
+      runtime.angles.detailDataUrl && { src: runtime.angles.detailDataUrl,    title: "Detail shot",    alt: "Generated detail shot" },
+    ].filter(Boolean) as Array<{ src: string; title: string; alt?: string }>;
+  }
 
   function handleRetry() {
     onRetry(retryComments);
@@ -156,7 +168,7 @@ export default function StoryboardResultsPane({
             <button
               type="button"
               className="btnGhost iconButton"
-              onClick={() => onOpenImage(runtime.resultDataUrl!, "Generated look", "Generated look")}
+              onClick={() => onOpenImage(runtime.resultDataUrl!, "Generated look", "Generated look", buildResultGallery())}
               aria-label="Open generated image"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -226,7 +238,7 @@ export default function StoryboardResultsPane({
             >
               {runtime.angles.generating ? "Generating..." : "Generate Multiple Angles"}
             </button>
-            {runtime.angles.sideDataUrl && runtime.angles.backDataUrl && (
+            {runtime.angles.sideDataUrl && runtime.angles.backDataUrl && runtime.angles.detailDataUrl && (
               <div style={{ display: "inline-flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <button type="button" className="btnSecondary" onClick={onSaveAll}>Save all images</button>
                 <button type="button" className="btnPrimary" onClick={onDownloadAll}>Download all images</button>
@@ -237,14 +249,15 @@ export default function StoryboardResultsPane({
           {runtime.angles.timingsMs && (
             <div className="muted" style={{ marginTop: 10 }}>
               Side: {formatDurationMs(runtime.angles.timingsMs.side)} · Back:{" "}
-              {formatDurationMs(runtime.angles.timingsMs.back)} · Total:{" "}
+              {formatDurationMs(runtime.angles.timingsMs.back)} · Detail:{" "}
+              {formatDurationMs(runtime.angles.timingsMs.detail)} · Total:{" "}
               {formatDurationMs(runtime.angles.timingsMs.total)}
             </div>
           )}
 
           {runtime.angles.error && <div className="error">{runtime.angles.error}</div>}
 
-          {(runtime.angles.sideDataUrl || runtime.angles.backDataUrl) && (
+          {(runtime.angles.sideDataUrl || runtime.angles.backDataUrl || runtime.angles.detailDataUrl) && (
             <div className="anglesGrid">
               {/* Side */}
               <div className="angleTile">
@@ -255,7 +268,7 @@ export default function StoryboardResultsPane({
                       <button
                         type="button"
                         className="btnGhost iconButton"
-                        onClick={() => onOpenImage(runtime.angles.sideDataUrl!, "Side view", "Generated side view")}
+                        onClick={() => onOpenImage(runtime.angles.sideDataUrl!, "Side view", "Generated side view", buildResultGallery())}
                         aria-label="Open side view"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -294,7 +307,7 @@ export default function StoryboardResultsPane({
                       <button
                         type="button"
                         className="btnGhost iconButton"
-                        onClick={() => onOpenImage(runtime.angles.backDataUrl!, "Back view", "Generated back view")}
+                        onClick={() => onOpenImage(runtime.angles.backDataUrl!, "Back view", "Generated back view", buildResultGallery())}
                         aria-label="Open back view"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -318,6 +331,45 @@ export default function StoryboardResultsPane({
                 {runtime.angles.backDataUrl ? (
                   <div style={{ marginTop: 10 }}>
                     <img src={runtime.angles.backDataUrl} alt="Generated back view" draggable={false} />
+                  </div>
+                ) : (
+                  <div className="muted" style={{ marginTop: 10 }}>Not generated yet.</div>
+                )}
+              </div>
+
+              {/* Detail shot */}
+              <div className="angleTile">
+                <div className="angleTileHeader">
+                  <div className="angleTileTitle">Detail shot</div>
+                  {runtime.angles.detailDataUrl && (
+                    <div className="angleTileActions">
+                      <button
+                        type="button"
+                        className="btnGhost iconButton"
+                        onClick={() => onOpenImage(runtime.angles.detailDataUrl!, "Detail shot", "Generated detail shot", buildResultGallery())}
+                        aria-label="Open detail shot"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M10 10 5 5" /><path d="M5 8V5H8" /><path d="M14 10 19 5" /><path d="M16 5h3v3" />
+                          <path d="M10 14 5 19" /><path d="M5 16v3h3" /><path d="M14 14 19 19" /><path d="M16 19h3v-3" />
+                        </svg>
+                      </button>
+                      <a
+                        className="btn btnGhost iconButton"
+                        href={runtime.angles.detailDataUrl}
+                        download={`look-detail-${Date.now()}.${mimeToExtension(runtime.angles.detailMimeType)}`}
+                        aria-label="Download detail shot"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M12 3v10" /><path d="M8 11l4 4 4-4" /><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                        </svg>
+                      </a>
+                    </div>
+                  )}
+                </div>
+                {runtime.angles.detailDataUrl ? (
+                  <div style={{ marginTop: 10 }}>
+                    <img src={runtime.angles.detailDataUrl} alt="Generated detail shot" draggable={false} />
                   </div>
                 ) : (
                   <div className="muted" style={{ marginTop: 10 }}>Not generated yet.</div>

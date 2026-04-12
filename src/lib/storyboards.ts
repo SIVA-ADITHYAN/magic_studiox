@@ -11,11 +11,7 @@ export const GARMENT_TYPES = [
   "Hoodie",
   "Sweater",
   "Blazer",
-  "Skirt",
-  "Gown",
   "Saree",
-  "Salwar Kameez",
-  "Dhoti",
 ] as const;
 
 export const STORYBOARDS_STORAGE_KEY = "esg_storyboards_v1";

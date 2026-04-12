@@ -133,10 +133,6 @@ export default function StoryboardLibrary({
                     <div className="storyboardCardTitle">{sb.title}</div>
                     <div className="storyboardCardMeta">{formatTimestamp(sb.updatedAt)}</div>
                   </div>
-                  {sb.garmentType && (
-                    <div className="storyboardCardGarment">{sb.garmentType}</div>
-                  )}
-                  <div className="storyboardCardSub">{subtitleFor(sb)}</div>
                 </div>
               </div>
             );

@@ -260,12 +260,6 @@ export default function MultiAngleTab() {
               <span>{isGenerating ? "Generating..." : "Generate New View"}</span>
               <span className="ma-button-bubble" aria-hidden="true">→</span>
             </button>
-            <p className="ma-backend-note">
-              Requires the multiangle backend running at{" "}
-              <code>localhost:7861</code>. Start it with{" "}
-              <code>python app.py</code> inside{" "}
-              <code>botstudiox/multiangle/</code>.
-            </p>
           </article>
         </form>
       </aside>

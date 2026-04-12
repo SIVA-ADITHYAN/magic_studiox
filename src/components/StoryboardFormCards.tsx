@@ -109,6 +109,7 @@ export default function StoryboardFormCards({
   const [isLoadingBgTemplate, setIsLoadingBgTemplate] = useState(false);
   const [poseTab, setPoseTab] = useState<"template" | "custom">("template");
   const [isLoadingPoseTemplate, setIsLoadingPoseTemplate] = useState(false);
+  const [poseCategoryFilter, setPoseCategoryFilter] = useState<string>("");
   const [bgCategoryFilter, setBgCategoryFilter] = useState<string>("");
   const [modelEthnicityFilter, setModelEthnicityFilter] = useState<string>("");
 
@@ -198,25 +199,28 @@ export default function StoryboardFormCards({
     }
   };
 
-  const poseTemplatesByCategory = useMemo(() => {
-    const map = new Map<string, PoseTemplate[]>();
-    for (const t of poseTemplates) {
-      if (!map.has(t.category)) map.set(t.category, []);
-      map.get(t.category)!.push(t);
-    }
-    return map;
+  const poseCategories = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of poseTemplates) seen.add(t.category);
+    return Array.from(seen);
   }, []);
 
-  const handleSelectPoseTemplate = async (tmpl: PoseTemplate) => {
-    if (!tmpl.url) {
-      // Use Placeholder text fallback since image might not exist yet
-      onConfigUpdate({
-        modelPosePreset: "custom",
-        modelPoseDetails: tmpl.poseKeyword
-      });
-      alert(`Pose selected: ${tmpl.label}. Image generation for templates is pending, but the pose will be applied!`);
-      return;
+  // Map<garment, Map<poseName, PoseTemplate[]>>
+  const filteredPosesByCategory = useMemo(() => {
+    const filtered = poseCategoryFilter
+      ? poseTemplates.filter((t) => t.category === poseCategoryFilter)
+      : poseTemplates;
+    const outer = new Map<string, Map<string, PoseTemplate[]>>();
+    for (const t of filtered) {
+      if (!outer.has(t.category)) outer.set(t.category, new Map());
+      const inner = outer.get(t.category)!;
+      if (!inner.has(t.label)) inner.set(t.label, []);
+      inner.get(t.label)!.push(t);
     }
+    return outer;
+  }, [poseCategoryFilter]);
+
+  const handleSelectPoseTemplate = async (tmpl: PoseTemplate) => {
     setIsLoadingPoseTemplate(true);
     try {
       const baseUrl = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -226,15 +230,14 @@ export default function StoryboardFormCards({
       const reader = new FileReader();
       reader.onloadend = () => {
         const b64 = reader.result as string;
-        addPoseFromDataUrl(b64, `pose_template_${tmpl.id}.png`);
-        
+        addPoseFromDataUrl(b64, `pose_template_${tmpl.id}.jpg`);
         onConfigUpdate({
           modelPosePreset: "custom",
-          modelPoseDetails: tmpl.poseKeyword
+          modelPoseDetails: tmpl.poseKeyword,
         });
       };
       reader.readAsDataURL(blob);
-    } catch(e) {
+    } catch (e) {
       console.error("Failed to load pose template", e);
       alert("Failed to load template pose. Please try again.");
     } finally {
@@ -411,6 +414,7 @@ export default function StoryboardFormCards({
                     >{cat}</button>
                   ))}
                 </div>
+                <div style={{ maxHeight: 260, overflowY: "auto", paddingRight: 4 }}>
                 <div className="preview previewAssets">
                   {filteredBgTemplates.map((tmpl) => (
                     <div key={tmpl.id} className="previewItem" style={{ cursor: tmpl.url ? "pointer" : "not-allowed", opacity: tmpl.url ? 1 : 0.4 }} onClick={() => handleSelectBgTemplate(tmpl)} title={tmpl.label}>
@@ -423,6 +427,7 @@ export default function StoryboardFormCards({
                       )}
                     </div>
                   ))}
+                </div>
                 </div>
                 {isLoadingBgTemplate && <div className="muted" style={{ marginTop: 8 }}>Loading template...</div>}
               </div>
@@ -532,6 +537,7 @@ export default function StoryboardFormCards({
                     >{eth}</button>
                   ))}
                 </div>
+                <div style={{ maxHeight: 260, overflowY: "auto", paddingRight: 4 }}>
                 {Array.from(filteredModelsByCategory.entries()).map(([cat, templates]) => (
                   <div key={cat} style={{ marginBottom: 16 }}>
                     <div style={{ fontWeight: 600, marginBottom: 8, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.6)" }}>{cat}</div>
@@ -544,6 +550,7 @@ export default function StoryboardFormCards({
                     </div>
                   </div>
                 ))}
+                </div>
                 {isLoadingTemplate && <div className="muted" style={{ marginTop: 8 }}>Loading template...</div>}
               </div>
             )}
@@ -633,25 +640,52 @@ export default function StoryboardFormCards({
 
             {poseTab === "template" && (
               <div className="templateModelsSection" style={{ marginBottom: 24, padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "8px" }}>
-                <div style={{ marginBottom: 16 }} className="muted">Choose a mannequin pose template to guide the generation.</div>
-                {Array.from(poseTemplatesByCategory.entries()).map(([cat, templates]) => (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.6)" }}>{cat}</div>
-                    <div className="preview previewAssets">
-                      {templates.map(tmpl => (
-                        <div key={tmpl.id} className="previewItem" onClick={() => handleSelectPoseTemplate(tmpl)} title={tmpl.label}>
-                          {tmpl.url ? (
-                            <img src={(import.meta.env.BASE_URL || "/").replace(/\/$/, '') + tmpl.url} alt={tmpl.label} draggable={false} />
-                          ) : (
-                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", background: "#333", color: "#888", textAlign: "center", minHeight: "120px" }}>
-                              {tmpl.label}
-                            </div>
-                          )}
+                <div style={{ marginBottom: 10 }} className="muted">Choose a pose template to guide the generation.</div>
+                <div className="pillGroup" role="group" aria-label="Pose category filter" style={{ marginBottom: 14, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className={["garmentFilterPill", !poseCategoryFilter ? "garmentFilterPillActive" : ""].filter(Boolean).join(" ")}
+                    onClick={() => setPoseCategoryFilter("")}
+                  >All</button>
+                  {poseCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={["garmentFilterPill", poseCategoryFilter === cat ? "garmentFilterPillActive" : ""].filter(Boolean).join(" ")}
+                      onClick={() => setPoseCategoryFilter(poseCategoryFilter === cat ? "" : cat)}
+                    >{cat}</button>
+                  ))}
+                </div>
+                <div style={{ maxHeight: 340, overflowY: "auto", paddingRight: 4 }}>
+                  {Array.from(filteredPosesByCategory.entries()).map(([garment, poseMap]) => (
+                    <div key={garment} style={{ marginBottom: 20 }}>
+                      {/* Garment header */}
+                      <div style={{ fontWeight: 700, marginBottom: 10, fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent)", borderBottom: "1px solid rgba(139,92,246,0.2)", paddingBottom: 4 }}>
+                        {garment}
+                      </div>
+                      {/* Pose sub-groups */}
+                      {Array.from(poseMap.entries()).map(([poseName, templates]) => (
+                        <div key={poseName} style={{ marginBottom: 12 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 6, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(255,255,255,0.5)" }}>
+                            {poseName}
+                          </div>
+                          <div className="preview previewAssets">
+                            {templates.map((tmpl) => (
+                              <div key={tmpl.id} className="previewItem" style={{ cursor: "pointer" }} onClick={() => handleSelectPoseTemplate(tmpl)} title={`${garment} — ${poseName}`}>
+                                <img
+                                  src={(import.meta.env.BASE_URL || "/").replace(/\/$/, "") + tmpl.url}
+                                  alt={poseName}
+                                  draggable={false}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
                 {isLoadingPoseTemplate && <div className="muted" style={{ marginTop: 8 }}>Loading pose template...</div>}
               </div>
             )}

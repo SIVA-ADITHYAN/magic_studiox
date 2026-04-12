@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-const APP = "/app";
+const APP = "/register";
 
 export default function LandingPage() {
   return (
@@ -15,6 +15,7 @@ export default function LandingPage() {
           <a href="#features" className="lp-nav-link">Features</a>
           <a href="#how-it-works" className="lp-nav-link">How it works</a>
           <a href="#product" className="lp-nav-link">Product</a>
+          <Link to="/login" className="lp-nav-link">Sign In</Link>
           <Link to={APP} className="lp-nav-cta">Get Started →</Link>
         </div>
       </nav>
@@ -273,7 +274,7 @@ export default function LandingPage() {
               <ul>
                 <li><a href="#features">Features</a></li>
                 <li><a href="#how-it-works">How it works</a></li>
-                <li><Link to={APP}>Launch App</Link></li>
+                <li><Link to="/login">Sign In</Link></li>
               </ul>
             </div>
 
@@ -289,9 +290,9 @@ export default function LandingPage() {
             <div className="lp-footer-col">
               <h4>AI Tools</h4>
               <ul>
-                <li><Link to={APP}>BotStudioX</Link></li>
-                <li><Link to={APP}>Print Application</Link></li>
-                <li><Link to={APP}>Multi-Angle Shots</Link></li>
+                <li><Link to={APP}>Get Started</Link></li>
+                <li><Link to={APP}>Get Started</Link></li>
+                <li><Link to={APP}>Get Started</Link></li>
               </ul>
             </div>
           </div>

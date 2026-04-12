@@ -15,8 +15,8 @@ const CONFIG = {
   arcRadius: 1.75,
   cameraYaw: -0.78,
   cameraPitch: -0.42,
-  cameraDistance: 8.5,
-  focalLength: 380,
+  cameraDistance: 10,
+  focalLength: 420,
 };
 
 const COLORS = {
@@ -274,7 +274,7 @@ export default function CameraEditor({ camera, imageSrc, onChange }: CameraEdito
         nextCamera.elevation = findNearestElevation(pointer, nextCamera, metrics);
       } else {
         const deltaY = pointer.y - drag.startY;
-        nextCamera.distance = clamp(drag.snapDistance - deltaY * 0.004, 0.1, 1.4);
+        nextCamera.distance = clamp(drag.snapDistance - deltaY * 0.003, 0.25, 1.4);
       }
       cameraRef.current = nextCamera;
       renderCurrent();

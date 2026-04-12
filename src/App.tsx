@@ -53,7 +53,9 @@ type StoryboardAnglesRuntime = {
   sideMimeType: string | null;
   backDataUrl: string | null;
   backMimeType: string | null;
-  timingsMs: { side: number; back: number; total: number } | null;
+  detailDataUrl: string | null;
+  detailMimeType: string | null;
+  timingsMs: { side: number; back: number; detail: number; total: number } | null;
 };
 
 type StoryboardPrintsRuntime = {
@@ -110,7 +112,9 @@ type SavedImageView = SavedImageRecord & { url: string };
 
 /**
  * Canvas-composites a design image onto a garment image.
- * The design is placed in the printable area (center-upper region) using multiply blend.
+ * Uses destination-in masking so the design is clipped strictly to the garment
+ * silhouette (alpha channel), then blended with multiply for a realistic fabric
+ * look. Pixels outside the garment boundary are never touched.
  */
 function compositeDesignOnGarment(garmentDataUrl: string, designDataUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -120,32 +124,48 @@ function compositeDesignOnGarment(garmentDataUrl: string, designDataUrl: string)
 
     const garmentImg = new Image();
     garmentImg.onload = () => {
-      canvas.width = garmentImg.naturalWidth || 800;
-      canvas.height = garmentImg.naturalHeight || 1000;
-
-      // White background so multiply blend works correctly on transparent PNGs
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(garmentImg, 0, 0);
+      const W = garmentImg.naturalWidth || 800;
+      const H = garmentImg.naturalHeight || 1000;
+      canvas.width = W;
+      canvas.height = H;
 
       const designImg = new Image();
       designImg.onload = () => {
-        // Printable area: centered horizontally, upper-mid region vertically
-        const areaX = canvas.width * 0.2;
-        const areaY = canvas.height * 0.15;
-        const areaW = canvas.width * 0.6;
-        const areaH = canvas.height * 0.5;
+        // ── Step 1: Build masked design layer on an off-screen canvas ─────────
+        // Scale design to COVER the full garment bounds (cover, not contain)
+        // so no garment area is left unpainted.
+        const maskCanvas = document.createElement("canvas");
+        maskCanvas.width = W;
+        maskCanvas.height = H;
+        const mCtx = maskCanvas.getContext("2d")!;
 
-        // Fit design inside area while preserving aspect ratio
         const designAR = designImg.naturalWidth / designImg.naturalHeight;
-        const areaAR = areaW / areaH;
-        let dw = areaW, dh = areaH;
-        if (designAR > areaAR) { dh = areaW / designAR; } else { dw = areaH * designAR; }
-        const dx = areaX + (areaW - dw) / 2;
-        const dy = areaY + (areaH - dh) / 2;
+        const canvasAR = W / H;
+        let dw: number, dh: number;
+        if (designAR > canvasAR) { dh = H; dw = H * designAR; }
+        else                     { dw = W; dh = W / designAR; }
+        mCtx.drawImage(designImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
 
+        // ── Step 2: Clip design strictly to garment alpha with destination-in ──
+        // Every pixel where the garment is transparent becomes transparent in
+        // the design layer — design can never bleed outside the garment edge.
+        mCtx.globalCompositeOperation = "destination-in";
+        mCtx.drawImage(garmentImg, 0, 0, W, H);
+        mCtx.globalCompositeOperation = "source-over";
+
+        // ── Step 3: Compose final output ──────────────────────────────────────
+        // White fill so multiply math is correct for white-base garment templates.
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, W, H);
+
+        // Draw the garment base (preserves folds, shadows, silhouette)
+        ctx.drawImage(garmentImg, 0, 0, W, H);
+
+        // Blend the masked design with multiply — print follows fabric shading
         ctx.globalCompositeOperation = "multiply";
-        ctx.drawImage(designImg, dx, dy, dw, dh);
+        ctx.drawImage(maskCanvas, 0, 0);
+
+        // Reset back to normal compositing
         ctx.globalCompositeOperation = "source-over";
 
         resolve(canvas.toDataURL("image/png"));
@@ -168,7 +188,7 @@ const GENERATION_STEPS = [
 const ACTIVE_TAB_KEY = "esg_active_tab_v1";
 
 function createDefaultAnglesRuntime(): StoryboardAnglesRuntime {
-  return { generating: false, error: null, sideDataUrl: null, sideMimeType: null, backDataUrl: null, backMimeType: null, timingsMs: null };
+  return { generating: false, error: null, sideDataUrl: null, sideMimeType: null, backDataUrl: null, backMimeType: null, detailDataUrl: null, detailMimeType: null, timingsMs: null };
 }
 
 function createDefaultPrintsRuntime(): StoryboardPrintsRuntime {
@@ -404,7 +424,8 @@ export default function App() {
   });
 
   const [deleteStoryboardModalOpen, setDeleteStoryboardModalOpen] = useState(false);
-  const [imageModal, setImageModal] = useState<{ src: string; title: string; alt: string } | null>(null);
+  type ImageEntry = { src: string; title: string; alt?: string };
+  const [imageModal, setImageModal] = useState<{ images: ImageEntry[]; currentIndex: number } | null>(null);
   const [savedImages, setSavedImages] = useState<SavedImageView[]>([]);
   const [saveToast, setSaveToast] = useState({ visible: false, message: "" });
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -463,7 +484,7 @@ export default function App() {
     activeTab === "prints" ? "Add Prints"
     : activeTab === "assets" ? "Uploaded Assets"
     : activeTab === "saved" ? "Saved images"
-    : activeTab === "multiangle" ? "Multi Angle"
+    : activeTab === "multiangle" ? "Multi Angle - Beta"
     : "Generate Images";
 
   // ── Derived computed values used in generation ────────────────────────────
@@ -672,9 +693,18 @@ export default function App() {
   }
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
-  function openImageModal(src: string | null | undefined, title: string, alt?: string) {
+  function openImageModal(
+    src: string | null | undefined,
+    title: string,
+    alt?: string,
+    gallery?: Array<{ src: string; title: string; alt?: string }>,
+  ) {
     if (!src) return;
-    setImageModal({ src, title, alt: alt ?? title });
+    const imgs = gallery && gallery.length > 0
+      ? gallery.filter((g) => Boolean(g.src))
+      : [{ src, title, alt: alt ?? title }];
+    const idx = imgs.findIndex((g) => g.src === src);
+    setImageModal({ images: imgs, currentIndex: Math.max(0, idx) });
   }
 
   // ── Save toast ─────────────────────────────────────────────────────────────
@@ -1158,11 +1188,14 @@ export default function App() {
 
     try {
       const colorSwatch = printInputKind === "color" ? createColorSwatchDataUrl(printColorHex!) : null;
-      const prompt = buildPrintApplicationPrompt({
+      const basePromptOpts = {
         additionalPrompt: activeConfig.printAdditionalPrompt || "",
         ...(typeof retryComment === "string" ? { retryComment } : {}),
         ...(printColorHex ? { colorHex: printColorHex } : {}),
-      });
+      };
+      const promptFront = buildPrintApplicationPrompt({ ...basePromptOpts, view: "front" });
+      const promptBack  = buildPrintApplicationPrompt({ ...basePromptOpts, view: "back" });
+      const promptSide  = buildPrintApplicationPrompt({ ...basePromptOpts, view: "side" });
 
       const t0 = performance.now();
       const promises: Promise<any>[] = [];
@@ -1172,16 +1205,18 @@ export default function App() {
       const backDesign = colorSwatch ?? rt.prints.printDesignBackDataUrl;
       const sideDesign = colorSwatch ?? rt.prints.printDesignSideDataUrl;
 
+      // Design is passed FIRST so the model treats it as the primary texture
+      // source; garment is passed SECOND as the shape/mask template.
       if (rt.prints.baseGarmentFrontDataUrl && frontDesign) {
-        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentFrontDataUrl), dataUrlToInlineImage(frontDesign)], timeoutMs: 180000 }));
+        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: promptFront, images: [dataUrlToInlineImage(frontDesign), dataUrlToInlineImage(rt.prints.baseGarmentFrontDataUrl)], timeoutMs: 180000 }));
         keys.push("front");
       }
       if (!isFullCloth && rt.prints.baseGarmentBackDataUrl && backDesign) {
-        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentBackDataUrl), dataUrlToInlineImage(backDesign)], timeoutMs: 180000 }));
+        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: promptBack, images: [dataUrlToInlineImage(backDesign), dataUrlToInlineImage(rt.prints.baseGarmentBackDataUrl)], timeoutMs: 180000 }));
         keys.push("back");
       }
       if (!isFullCloth && rt.prints.baseGarmentSideDataUrl && sideDesign) {
-        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: prompt, images: [dataUrlToInlineImage(rt.prints.baseGarmentSideDataUrl), dataUrlToInlineImage(sideDesign)], timeoutMs: 180000 }));
+        promises.push(generateImage({ model: "gemini-3-pro-image-preview", promptText: promptSide, images: [dataUrlToInlineImage(sideDesign), dataUrlToInlineImage(rt.prints.baseGarmentSideDataUrl)], timeoutMs: 180000 }));
         keys.push("side");
       }
 
@@ -1475,7 +1510,7 @@ export default function App() {
     if (!rt.garmentRefDataUrl) { updateAngles(sbId, { error: "Missing garment reference. Please generate the main image again." }); return; }
     if (!rt.lastPlan) { updateAngles(sbId, { error: "Missing generation context. Please generate the main image again." }); return; }
 
-    updateAngles(sbId, { generating: true, sideDataUrl: null, sideMimeType: null, backDataUrl: null, backMimeType: null, timingsMs: null });
+    updateAngles(sbId, { generating: true, sideDataUrl: null, sideMimeType: null, backDataUrl: null, backMimeType: null, detailDataUrl: null, detailMimeType: null, timingsMs: null });
 
     try {
       const garmentRefInline = dataUrlToInlineImage(rt.garmentRefDataUrl);
@@ -1493,18 +1528,50 @@ export default function App() {
         plan: rt.lastPlan, finalPrompt: rt.lastFinalPrompt || "",
         garmentAngleCount: garmentAnglesInline.length,
         hasModelReference: Boolean(modelRefInline), hasBackgroundReference: Boolean(backgroundRefInline),
+        garmentType: activeStoryboard.garmentType ?? "",
       };
 
+      // Pick random angle pose templates
+      const baseUrl = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+      async function fetchAnglePose(folder: string, count: number): Promise<string | null> {
+        const n = Math.floor(Math.random() * count) + 1;
+        try {
+          const res = await fetch(`${baseUrl}/angle-poses/${folder}/${n}.jpg`);
+          if (!res.ok) return null;
+          const blob = await res.blob();
+          return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch { return null; }
+      }
+
+      const [sidePoseDataUrl, backPoseDataUrl] = await Promise.all([
+        fetchAnglePose("side", 5),
+        fetchAnglePose("back", 8),
+      ]);
+
       const t0 = performance.now();
-      const [sideRes, backRes] = await Promise.all([
+      const [sideRes, backRes, detailRes] = await Promise.all([
         (async () => {
           const t = performance.now();
-          const res = await generateImage({ model: "gemini-3-pro-image-preview", promptText: buildMultiAnglePrompt({ ...promptBase, angle: "side" }), images: referenceImages, aspectRatio: "3:4", width: 1080, height: 1440, timeoutMs: 180000 });
+          const sidePoseInline = sidePoseDataUrl ? dataUrlToInlineImage(sidePoseDataUrl) : null;
+          const sideImages = [...referenceImages, ...(sidePoseInline ? [sidePoseInline] : [])];
+          const res = await generateImage({ model: "gemini-3-pro-image-preview", promptText: buildMultiAnglePrompt({ ...promptBase, angle: "side", hasPoseReference: Boolean(sidePoseInline) }), images: sideImages, aspectRatio: "3:4", width: 1080, height: 1440, timeoutMs: 180000 });
           return { res, ms: Math.round(performance.now() - t) };
         })(),
         (async () => {
           const t = performance.now();
-          const res = await generateImage({ model: "gemini-3-pro-image-preview", promptText: buildMultiAnglePrompt({ ...promptBase, angle: "back" }), images: referenceImages, aspectRatio: "3:4", width: 1080, height: 1440, timeoutMs: 180000 });
+          const backPoseInline = backPoseDataUrl ? dataUrlToInlineImage(backPoseDataUrl) : null;
+          const backImages = [...referenceImages, ...(backPoseInline ? [backPoseInline] : [])];
+          const res = await generateImage({ model: "gemini-3-pro-image-preview", promptText: buildMultiAnglePrompt({ ...promptBase, angle: "back", hasPoseReference: Boolean(backPoseInline) }), images: backImages, aspectRatio: "3:4", width: 1080, height: 1440, timeoutMs: 180000 });
+          return { res, ms: Math.round(performance.now() - t) };
+        })(),
+        (async () => {
+          const t = performance.now();
+          const res = await generateImage({ model: "gemini-3-pro-image-preview", promptText: buildMultiAnglePrompt({ ...promptBase, angle: "detail" }), images: referenceImages, aspectRatio: "1:1", timeoutMs: 180000 });
           return { res, ms: Math.round(performance.now() - t) };
         })(),
       ]);
@@ -1512,7 +1579,8 @@ export default function App() {
       updateAngles(sbId, {
         sideMimeType: sideRes.res.mimeType, sideDataUrl: `data:${sideRes.res.mimeType};base64,${sideRes.res.imageBase64}`,
         backMimeType: backRes.res.mimeType, backDataUrl: `data:${backRes.res.mimeType};base64,${backRes.res.imageBase64}`,
-        timingsMs: { side: sideRes.ms, back: backRes.ms, total: Math.round(performance.now() - t0) },
+        detailMimeType: detailRes.res.mimeType, detailDataUrl: `data:${detailRes.res.mimeType};base64,${detailRes.res.imageBase64}`,
+        timingsMs: { side: sideRes.ms, back: backRes.ms, detail: detailRes.ms, total: Math.round(performance.now() - t0) },
       });
       showToast("Multi-angle generation complete!", "success");
     } catch (err: any) {
@@ -1540,8 +1608,8 @@ export default function App() {
 
   async function saveAllImages() {
     const rt = activeRuntime;
-    if (!rt.resultDataUrl || !rt.angles.sideDataUrl || !rt.angles.backDataUrl) {
-      updateAngles(activeStoryboardId, { error: "Generate the main, side, and back images before saving." }); return;
+    if (!rt.resultDataUrl || !rt.angles.sideDataUrl || !rt.angles.backDataUrl || !rt.angles.detailDataUrl) {
+      updateAngles(activeStoryboardId, { error: "Generate the main, side, back, and detail images before saving." }); return;
     }
     try {
       const ts = Date.now(); const sbTitle = activeStoryboard.title;
@@ -1549,8 +1617,9 @@ export default function App() {
         saveImageToLibrary({ dataUrl: rt.resultDataUrl, mimeType: rt.resultMimeType, title: `Look — ${sbTitle}`, kind: "main", fileName: `look-main-${ts}.${mimeToExtension(rt.resultMimeType)}`, notify: false }),
         saveImageToLibrary({ dataUrl: rt.angles.sideDataUrl, mimeType: rt.angles.sideMimeType, title: `Side view — ${sbTitle}`, kind: "side", fileName: `look-side-${ts}.${mimeToExtension(rt.angles.sideMimeType)}`, notify: false }),
         saveImageToLibrary({ dataUrl: rt.angles.backDataUrl, mimeType: rt.angles.backMimeType, title: `Back view — ${sbTitle}`, kind: "back", fileName: `look-back-${ts}.${mimeToExtension(rt.angles.backMimeType)}`, notify: false }),
+        saveImageToLibrary({ dataUrl: rt.angles.detailDataUrl, mimeType: rt.angles.detailMimeType, title: `Detail shot — ${sbTitle}`, kind: "detail", fileName: `look-detail-${ts}.${mimeToExtension(rt.angles.detailMimeType)}`, notify: false }),
       ]);
-      showSaveToast("Saved 3 images.");
+      showSaveToast("Saved 4 images.");
     } catch (err: any) {
       updateAngles(activeStoryboardId, { error: err?.message || String(err) });
     }
@@ -1558,11 +1627,12 @@ export default function App() {
 
   function downloadAllImages() {
     const rt = activeRuntime;
-    if (!rt.resultDataUrl || !rt.angles.sideDataUrl || !rt.angles.backDataUrl) return;
+    if (!rt.resultDataUrl || !rt.angles.sideDataUrl || !rt.angles.backDataUrl || !rt.angles.detailDataUrl) return;
     const ts = Date.now();
     triggerDownload(rt.resultDataUrl, `look-main-${ts}.${mimeToExtension(rt.resultMimeType)}`);
     triggerDownload(rt.angles.sideDataUrl, `look-side-${ts}.${mimeToExtension(rt.angles.sideMimeType)}`);
     triggerDownload(rt.angles.backDataUrl, `look-back-${ts}.${mimeToExtension(rt.angles.backMimeType)}`);
+    triggerDownload(rt.angles.detailDataUrl, `look-detail-${ts}.${mimeToExtension(rt.angles.detailMimeType)}`);
   }
 
   function onResultImagePointerMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -1610,7 +1680,7 @@ export default function App() {
               >
                 {tab === "prints" ? "Add Prints"
                   : tab === "generate" ? "Generate Images"
-                  : tab === "multiangle" ? "Multi Angle"
+                  : tab === "multiangle" ? "Multi Angle - Beta"
                   : tab === "saved" ? "Saved images"
                   : "Uploaded Assets"}
               </button>
@@ -1651,7 +1721,7 @@ export default function App() {
                 onGenerate={() => generatePrintedGarment()}
                 onRetry={retryPrintedGarment}
                 onSave={savePrintedGarment}
-                onOpenImage={(src, title) => openImageModal(src, title, title)}
+                onOpenImage={(src, title, alt, gallery) => openImageModal(src, title, alt ?? title, gallery)}
               />
             )}
 
@@ -1772,10 +1842,13 @@ export default function App() {
 
       <ImageModal
         open={Boolean(imageModal)}
-        src={imageModal?.src || ""}
-        title={imageModal?.title || ""}
-        alt={imageModal?.alt}
+        src={imageModal?.images[imageModal.currentIndex]?.src ?? ""}
+        title={imageModal?.images[imageModal.currentIndex]?.title ?? ""}
+        alt={imageModal?.images[imageModal.currentIndex]?.alt}
         onClose={() => setImageModal(null)}
+        images={imageModal?.images}
+        currentIndex={imageModal?.currentIndex ?? 0}
+        onNavigate={(idx) => setImageModal((prev) => prev ? { ...prev, currentIndex: idx } : null)}
       />
       <DeleteStoryboardModal
         open={deleteStoryboardModalOpen}

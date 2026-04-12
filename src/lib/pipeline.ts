@@ -354,12 +354,14 @@ export function buildPrintApplicationPrompt(opts: {
   additionalPrompt: string;
   retryComment?: string;
   colorHex?: string;
+  view?: "front" | "back" | "side";
 }): string {
   const extra = (opts.additionalPrompt || "").trim();
   const hasRetry = typeof opts.retryComment === "string";
   const retryComment = (opts.retryComment || "").trim();
   const colorHex = (opts.colorHex || "").trim();
   const hasColorHex = Boolean(colorHex);
+  const view = opts.view || "front";
 
   const lines: string[] = [];
 
@@ -374,61 +376,86 @@ export function buildPrintApplicationPrompt(opts: {
   }
 
   if (hasColorHex) {
+    // ── Color-recolor branch (unchanged) ─────────────────────────────────────
+    const viewLabel = view === "back" ? "BACK VIEW" : view === "side" ? "SIDE VIEW (90° profile)" : "FRONT VIEW";
     lines.push(
+      `GARMENT VIEW: ${viewLabel}. The provided garment template image shows this exact angle — preserve it.`,
+      view === "back"
+        ? "Output MUST show the garment from the BACK. Do NOT rotate to a front-facing view."
+        : view === "side"
+        ? "Output MUST show a true 90-degree side profile. Do NOT rotate to a front-facing view."
+        : "Output MUST show the garment from the front, exactly as framed in the garment template.",
+      "",
       "You are a senior apparel print designer + production retoucher for an ecommerce fashion company.",
       "This is an IMAGE EDIT task: keep the base photo realistic and unchanged except for the garment fabric color.",
-      "IMAGE 1 is the BASE GARMENT PHOTO (a plain garment worn by a mannequin).",
-      "IMAGE 2 is a SOLID COLOR SWATCH image that represents the exact target color.",
+      "IMAGE 1 is the DESIGN / COLOR SWATCH. IMAGE 2 is the BASE GARMENT PHOTO (plain garment on mannequin).",
       "",
       `Solid color to apply (HEX): ${colorHex}`,
       "",
       "Photo quality requirements:",
-      "- Output must preserve the exact composition of IMAGE 1 (same mannequin, pose, background, lighting, shadows, wrinkles, camera angle).",
-      "- Do NOT crop or reframe. Keep the same aspect ratio and framing as IMAGE 1.",
+      "- Output must preserve the exact composition of the garment template (same mannequin, pose, background, lighting, shadows, wrinkles, camera angle).",
+      "- Do NOT crop or reframe. Keep the same aspect ratio and framing.",
       "- Only the garment fabric appearance should change.",
       "- Photorealistic, high resolution, crisp detail; no blur; no noise; do not add new text/watermarks.",
       "",
       "Task:",
-      "- Output the SAME base photo as IMAGE 1, but recolor the garment fabric to the exact solid color above.",
+      "- Output the SAME base garment photo, but recolor the garment fabric to the exact solid color above.",
       "- Keep the mannequin visible (do not remove it) and keep the background unchanged.",
       "",
       "Hard rules:",
-      "- Preserve the garment silhouette and construction exactly (neckline, sleeves, hem, seams, closures, texture). Do not change fit, length, or shape.",
-      "- Do NOT change anything outside the garment area (no changes to mannequin, background, lighting, shadows, camera, or edges).",
-      "- Do NOT add extra fabric, extra layers, or new garment elements.",
       "- Apply the solid color ONLY to the garment fabric (not on mannequin/skin/background).",
       "- Color realism: preserve original shading/highlights and fabric texture; the color should look dyed/printed into the fabric (not a flat sticker).",
+      "- Do NOT change anything outside the garment area (no changes to mannequin, background, lighting, shadows, camera, or edges).",
       "- Match the color as closely as possible to the HEX value (no random hue shifts, no gradients, no added patterns).",
       "- Return an IMAGE output (no text-only response).",
     );
   } else {
+    // ── Design / print application branch ────────────────────────────────────
+    const viewInstruction =
+      view === "back"
+        ? "BACK — show only the back side of the garment; no front buttons, no chest pocket visible."
+        : view === "side"
+        ? "SIDE — strict 90-degree side profile only; the mannequin faces left or right, NOT toward the camera."
+        : "FRONT — full front of the garment faces the camera.";
+
     lines.push(
-      "You are a professional apparel photo retoucher for an ecommerce fashion company.",
-      "This is a STRICT IMAGE EDIT: only the garment pixels may change; everything else must stay identical.",
-      "IMAGE 1 is the BASE GARMENT PHOTO (a plain garment on a mannequin).",
-      "IMAGE 2 is the PRINT/DESIGN artwork to apply to the garment fabric.",
+      "Use the provided garment image as the BASE TEMPLATE.",
+      "Use the provided design image as the EXACT TEXTURE OVERLAY.",
       "",
-      "What the design means (reference examples):",
-      "- Painterly animal-inspired blotches: warm brown/rust fields with cream shapes (leopard-like, organic edges).",
-      "- Watercolor floral blobs: teal/green/peach soft shapes with subtle horizontal scanline texture.",
-      "- Small irregular cream oval dots on a dark brown ground (dense, even repeat).",
-      "Treat IMAGE 2 as flat artwork only; it is NOT a background photo.",
+      "CRITICAL RULES (STRICT):",
+      "- The original garment color MUST be preserved exactly.",
+      "- Do NOT change the base fabric color under any condition.",
+      "- Do NOT convert dark fabric into white or lighter tones.",
+      "- The design must be OVERLAID on top of the existing garment color, not replace it.",
       "",
-      "Non-negotiable rules:",
-      "- Create a precise GARMENT MASK from IMAGE 1 (follow silhouette, seams, hems, neckline, cutouts).",
-      "- Clip the print strictly inside the garment mask. The print must NEVER appear on the mannequin or the background.",
-      "- Pixel lock: every pixel outside the garment mask must remain IDENTICAL to IMAGE 1.",
-      "- Preserve garment construction and fit (no shape, length, or seam changes).",
-      "- Preserve lighting, wrinkles, and fabric texture; the print must follow folds and shadows so it looks printed into the fabric.",
+      "TEXTURE APPLICATION:",
+      "- The design acts as a semi-transparent print layer blended over the fabric.",
+      "- Blend the design naturally with fabric folds, shadows, and lighting.",
+      "- Preserve all shadows, wrinkles, and original material texture from the garment template.",
+      "- Do not recreate, reinterpret, or distort the design pattern in any way.",
       "",
-      "Placement and scale:",
-      "- If IMAGE 2 is a repeating pattern, tile it evenly across the garment at a realistic textile scale.",
-      "- If IMAGE 2 is a centered graphic, place it centered on the chest/torso at a natural size.",
-      "- If IMAGE 2 is a solid color swatch, recolor the garment fabric to that color while preserving highlights/shadows and texture.",
+      "MASKING:",
+      "- Apply the design ONLY on the garment surface.",
+      "- Do NOT apply on the background or mannequin.",
+      "- Do NOT extend outside garment edges — silhouette, seams, neckline, hem, cuffs are hard boundaries.",
+      "- Every pixel outside the garment is pixel-identical to the garment template.",
       "",
-      "Output requirements:",
-      "- Deliver a single photorealistic high-resolution image with the same dimensions and framing as IMAGE 1.",
-      "- No background changes, no mannequin changes, no added text or watermarks."
+      `VIEW REQUIREMENTS: Generate the ${viewInstruction}`,
+      "",
+      "COLOR PRESERVATION:",
+      "- Maintain the original garment base color exactly (e.g. blue denim stays blue, dark shirt stays dark).",
+      "- The print pattern should adapt to the garment color, not override it.",
+      "- Avoid any whitening, bleaching, lightening, or recoloring of the base fabric.",
+      "",
+      "NEGATIVE (these make the output incorrect):",
+      "- no color change to the base fabric",
+      "- no white fabric unless the input garment is white",
+      "- no pattern distortion or recreation",
+      "- no design applied on background",
+      "- no lighting overexposure",
+      "- no bleed outside garment edges",
+      "",
+      "Style: realistic e-commerce product photography, high detail, sharp focus.",
     );
   }
   if (extra) {
@@ -436,7 +463,7 @@ export function buildPrintApplicationPrompt(opts: {
   }
   lines.push(
     "",
-    "Avoid: print behind garment, print used as background, any background change, mannequin changes, pose changes, cropping/reframing, altered garment shape, added fabric, added layers, print bleeding onto mannequin/background, any pixel changes outside the garment mask, warped print, wrong print scale, unintended patterns, low-res, blur, new text overlay, new watermark.",
+    "Avoid: design on background, design outside garment boundary, wrong camera angle, front view when back/side was requested, background change, mannequin change, added fabric, added layers, warped pattern, wrong fabric color, wrong scale, low-res, blur, text overlay, watermark.",
   );
   return lines.join("\n").trim();
 }
@@ -584,7 +611,7 @@ export function buildRetryCompositePrompt(opts: {
   return header.join("\n") + base;
 }
 
-export type MultiAngleKind = "side" | "back";
+export type MultiAngleKind = "side" | "back" | "detail";
 
 export function buildMultiAnglePrompt(opts: {
   angle: MultiAngleKind;
@@ -593,6 +620,8 @@ export function buildMultiAnglePrompt(opts: {
   garmentAngleCount: number;
   hasModelReference: boolean;
   hasBackgroundReference: boolean;
+  hasPoseReference?: boolean;
+  garmentType?: string;
 }): string {
   const avoid = [normalizeAvoidClause(opts.plan.negative_prompt), GLOBAL_AVOID].filter(Boolean).join(", ");
 
@@ -600,6 +629,9 @@ export function buildMultiAnglePrompt(opts: {
   const mainImageIndex = 2 + garmentAngles;
   const modelIndex = opts.hasModelReference ? mainImageIndex + 1 : null;
   const backgroundIndex = opts.hasBackgroundReference ? mainImageIndex + (opts.hasModelReference ? 2 : 1) : null;
+  const poseRefIndex = opts.hasPoseReference
+    ? mainImageIndex + (opts.hasModelReference ? 1 : 0) + (opts.hasBackgroundReference ? 1 : 0) + 1
+    : null;
 
   const lines: string[] = [
     "You are generating additional angles for an ecommerce fashion product photo.",
@@ -636,11 +668,42 @@ export function buildMultiAnglePrompt(opts: {
       "Pose: natural ecommerce side/3-4 turn. Rotate the body ~60–80° from camera, subtle weight shift (S-curve), one foot slightly forward, relaxed arms (one hand lightly on hip or along thigh), shoulders relaxed, soft smile.",
       "Composition: show the garment silhouette and side seam clearly; do not obscure the garment with hair or arms.",
     );
-  } else {
+    if (poseRefIndex) {
+      lines.push(`IMAGE ${poseRefIndex} is a SIDE POSE REFERENCE photo. Use it to guide the model's body pose and stance for the side view. Do NOT copy the model's face, hair, clothing, or background from this reference — only use the body pose and stance as inspiration.`);
+    }
+  } else if (opts.angle === "back") {
     lines.push(
       "Requested view: BACK VIEW.",
       "Pose: natural ecommerce back view. Model facing away from camera, slight head turn 15–30° (profile/3-4), arms relaxed slightly away from body to reveal the garment back, gentle weight shift, soft expression.",
       "Composition: show the garment back details clearly; move hair aside so the back of the garment is visible.",
+    );
+    if (poseRefIndex) {
+      lines.push(`IMAGE ${poseRefIndex} is a BACK POSE REFERENCE photo. Use it to guide the model's body pose and stance for the back view. Do NOT copy the model's face, hair, clothing, or background from this reference — only use the body pose and stance as inspiration.`);
+    }
+  } else {
+    // detail shot
+    const gType = (opts.garmentType || "").trim().toLowerCase();
+    let focusRegion: string;
+    if (["t-shirt", "shirt", "hoodie", "sweater"].some((g) => gType.includes(g))) {
+      focusRegion = "from shoulders to waist — capturing the neckline, chest, and hem of the upper body garment";
+    } else if (["jacket", "blazer"].some((g) => gType.includes(g))) {
+      focusRegion = "from shoulders to slightly below waist — capturing lapels, buttons, and the structured silhouette of the outerwear";
+    } else if (["pant", "jeans", "shorts"].some((g) => gType.includes(g))) {
+      focusRegion = "from waist to knee or thigh — capturing the waistband, fly, pockets, and leg fabric of the lower body garment";
+    } else if (gType.includes("saree")) {
+      focusRegion = "the draped area around the waist and the flowing pallu fabric — highlighting pleats, border, and textile texture of the saree";
+    } else {
+      focusRegion = "the most garment-rich region of the body (typically shoulders to waist for upper body, or waist to knee for lower body)";
+    }
+    lines.push(
+      "Requested view: DETAIL SHOT (zoomed-in garment close-up).",
+      `Focus region: ${focusRegion}.`,
+      "Framing: crop tightly so the garment fills most of the frame; keep minimal background visible; exclude face and irrelevant body parts (e.g. legs for upper-body garments, head/face for lower-body garments).",
+      "Garment must be centered and occupy at least 80% of the frame.",
+      "Highlight fine fabric details: folds, stitching, seams, texture, and realistic shadows. Sharp focus, high resolution.",
+      "Maintain the exact same garment design, color, texture, fit, and print as seen in the MAIN RESULT image. Do not alter the outfit.",
+      "Style: professional fashion e-commerce detail shot, clean composition, realistic lighting, high detail.",
+      "Do NOT show a full body. Do NOT include the face. Do NOT add new garment elements.",
     );
   }
 
@@ -664,14 +727,24 @@ export function buildMultiAnglePrompt(opts: {
     lines.push(opts.finalPrompt.trim());
   }
 
-  lines.push(
-    "FINAL CHECK (non-negotiable):",
-    FULL_BODY_RULE,
-    MODEL_AGE_RULE,
-    "Garment must match IMAGE 1 and the MAIN RESULT (no extra fabric, no added layers, no design changes).",
-    "Match the same background/scene as the MAIN RESULT (and BACKGROUND PHOTO if provided).",
-    "One person only; correct anatomy; no extra limbs; no duplicates.",
-  );
+  if (opts.angle === "detail") {
+    lines.push(
+      "FINAL CHECK (non-negotiable):",
+      "This is a DETAIL SHOT — do NOT output a full-body image. Crop tightly to the garment focus region.",
+      MODEL_AGE_RULE,
+      "Garment must match IMAGE 1 and the MAIN RESULT exactly (no extra fabric, no added layers, no design changes).",
+      "One person only; correct anatomy; no face visible; no extra limbs.",
+    );
+  } else {
+    lines.push(
+      "FINAL CHECK (non-negotiable):",
+      FULL_BODY_RULE,
+      MODEL_AGE_RULE,
+      "Garment must match IMAGE 1 and the MAIN RESULT (no extra fabric, no added layers, no design changes).",
+      "Match the same background/scene as the MAIN RESULT (and BACKGROUND PHOTO if provided).",
+      "One person only; correct anatomy; no extra limbs; no duplicates.",
+    );
+  }
   lines.push(`Avoid: ${avoid}`);
   return lines.join("\n").trim();
 }
