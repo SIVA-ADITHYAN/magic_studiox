@@ -10,6 +10,19 @@ type GarmentConfig = {
   type: "standard" | "full_cloth";
 };
 
+const COLOR_SELECTOR_GARMENTS = ["T-shirt", "Hoodie", "Sweater"] as const;
+
+const PRESET_COLORS: { label: string; hex: string }[] = [
+  { label: "White",  hex: "#FFFFFF" },
+  { label: "Black",  hex: "#1A1A1A" },
+  { label: "Red",    hex: "#C62828" },
+  { label: "Blue",   hex: "#1565C0" },
+  { label: "Green",  hex: "#2E7D32" },
+  { label: "Beige",  hex: "#F0E6D3" },
+  { label: "Grey",   hex: "#757575" },
+  { label: "Navy",   hex: "#0D1B4B" },
+];
+
 const ALL_GARMENTS: GarmentConfig[] = [
   { id: "Tshirt", name: "T-shirt", description: "Casual short-sleeve tee", type: "standard" },
   { id: "Shirt", name: "Shirt", description: "Button-down shirt", type: "standard" },
@@ -193,6 +206,11 @@ export default function PrintsTab({
 
   const selectedGarment = ALL_GARMENTS.find(g => g.name === config.printGarmentCategory) || ALL_GARMENTS[0]!;
   const isFullCloth = selectedGarment.type === "full_cloth";
+  const showColorSelector = (COLOR_SELECTOR_GARMENTS as readonly string[]).includes(selectedGarment.name);
+
+  function handlePresetColor(hex: string) {
+    onConfigUpdate({ printColorHex: hex, printInputKind: "color" });
+  }
 
   const templates = GARMENT_TEMPLATES[selectedGarment.name] ?? {};
 
@@ -356,6 +374,63 @@ export default function PrintsTab({
             )}
           </div>}
         </div>
+
+        {/* ── Garment Color Selector (T-shirt / Hoodie / Sweater only) ── */}
+        {showColorSelector && (
+          <div className="card" style={{ marginTop: 10 }}>
+            <FieldLabel label="Choose Garment Color" info="Select a base color for the garment before applying a print." />
+
+            {/* Color picker + hex input */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
+              <input
+                id="garmentColorPicker"
+                type="color"
+                value={colorPickerValue}
+                onChange={(e) => {
+                  handleColorPickerInput(e);
+                  onConfigUpdate({ printInputKind: "color" });
+                }}
+                aria-label="Pick garment color"
+                style={{ width: 48, height: 40, padding: 2, borderRadius: 8, border: "2px solid #E2E8F0", cursor: "pointer", flexShrink: 0 }}
+              />
+              <input
+                id="garmentColorHex"
+                className="control"
+                type="text"
+                value={config.printColorHex}
+                onChange={(e) => onConfigUpdate({ printColorHex: e.target.value, printInputKind: "color" })}
+                onBlur={handleColorHexBlur}
+                placeholder="#RRGGBB"
+                style={{ flex: 1 }}
+              />
+            </div>
+
+            {/* Preset color buttons */}
+            <div className="printColorPresets">
+              {PRESET_COLORS.map(({ label, hex }) => {
+                const isActive = config.printColorHex?.toUpperCase() === hex.toUpperCase();
+                return (
+                  <button
+                    key={hex}
+                    type="button"
+                    className={`printColorPresetBtn${isActive ? " printColorPresetBtnActive" : ""}`}
+                    onClick={() => handlePresetColor(hex)}
+                    title={label}
+                  >
+                    <span
+                      className="printColorSwatch"
+                      style={{
+                        background: hex,
+                        border: hex === "#FFFFFF" || hex === "#F0E6D3" ? "1.5px solid #D1D5DB" : "1.5px solid transparent",
+                      }}
+                    />
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── Design Upload Row ── */}
         <div className="row" style={{ marginTop: 16 }}>
