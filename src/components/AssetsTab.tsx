@@ -18,9 +18,11 @@ interface AssetsTabProps {
   savedImages: SavedImageView[];
   formatTimestamp: (ms: number) => string;
   mimeToExtension: (mime: string | null) => string;
+  onGarmentFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onBackgroundFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onModelFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onPoseFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  removeGarmentImage: (idx: number) => void;
   removeBackgroundImage: (idx: number) => void;
   removeModelImage: (idx: number) => void;
   removePoseImage: (idx: number) => void;
@@ -32,6 +34,7 @@ interface AssetsTabProps {
 
 const LIBRARY_CATEGORIES = [
   { key: "all",        label: "All",         kinds: null },
+  { key: "garment",    label: "Garments",    kinds: ["asset-garment"] },
   { key: "background", label: "Backgrounds", kinds: ["asset-background"] },
   { key: "model",      label: "Models",      kinds: ["asset-model"] },
   { key: "pose",       label: "Poses",       kinds: ["asset-pose"] },
@@ -40,6 +43,7 @@ const LIBRARY_CATEGORIES = [
 type CategoryKey = typeof LIBRARY_CATEGORIES[number]["key"];
 
 function categoryLabel(kind: string): string {
+  if (kind === "asset-garment") return "Garment";
   if (kind === "asset-background") return "Background";
   if (kind === "asset-model") return "Model";
   if (kind === "asset-pose") return "Pose";
@@ -72,9 +76,10 @@ const TrashIcon = () => (
 
 // ─── Upload section sub-tab ───────────────────────────────────────────────────
 
-type UploadSubTab = "background" | "model" | "pose";
+type UploadSubTab = "garment" | "background" | "model" | "pose";
 
 const UPLOAD_TABS: { key: UploadSubTab; label: string; emoji: string; info: string }[] = [
+  { key: "garment",    label: "Garments",    emoji: "👗", info: "Upload garment photos to save them to your library for reuse." },
   { key: "background", label: "Backgrounds", emoji: "🖼️", info: "Upload 1–4 images to lock a scene setting or mood." },
   { key: "model",      label: "Models",      emoji: "🧍", info: "Upload 1–4 model reference images to preserve identity and styling." },
   { key: "pose",       label: "Poses",       emoji: "🤸", info: "Upload a pose reference to recreate a specific posture or stance." },
@@ -82,9 +87,11 @@ const UPLOAD_TABS: { key: UploadSubTab; label: string; emoji: string; info: stri
 
 interface UploadPanelProps {
   activeRuntime: RuntimeLite;
+  onGarmentFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onBackgroundFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onModelFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onPoseFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  removeGarmentImage: (idx: number) => void;
   removeBackgroundImage: (idx: number) => void;
   removeModelImage: (idx: number) => void;
   removePoseImage: (idx: number) => void;
@@ -93,26 +100,29 @@ interface UploadPanelProps {
 
 function UploadPanel({
   activeRuntime,
-  onBackgroundFileChange, onModelFileChange, onPoseFileChange,
-  removeBackgroundImage, removeModelImage, removePoseImage,
+  onGarmentFileChange, onBackgroundFileChange, onModelFileChange, onPoseFileChange,
+  removeGarmentImage, removeBackgroundImage, removeModelImage, removePoseImage,
   onOpenImage,
 }: UploadPanelProps) {
-  const [uploadTab, setUploadTab] = useState<UploadSubTab>("background");
+  const [uploadTab, setUploadTab] = useState<UploadSubTab>("garment");
 
   const activeTabDef = UPLOAD_TABS.find((t) => t.key === uploadTab)!;
 
   const dataUrls =
-    uploadTab === "background" ? activeRuntime.backgroundDataUrls
+    uploadTab === "garment" ? activeRuntime.garmentDataUrls
+    : uploadTab === "background" ? activeRuntime.backgroundDataUrls
     : uploadTab === "model" ? activeRuntime.modelDataUrls
     : activeRuntime.poseDataUrls;
 
   const fileChangeHandler =
-    uploadTab === "background" ? onBackgroundFileChange
+    uploadTab === "garment" ? onGarmentFileChange
+    : uploadTab === "background" ? onBackgroundFileChange
     : uploadTab === "model" ? onModelFileChange
     : onPoseFileChange;
 
   const removeHandler =
-    uploadTab === "background" ? removeBackgroundImage
+    uploadTab === "garment" ? removeGarmentImage
+    : uploadTab === "background" ? removeBackgroundImage
     : uploadTab === "model" ? removeModelImage
     : removePoseImage;
 
@@ -135,7 +145,8 @@ function UploadPanel({
             {t.label}
             {(uploadTab !== t.key) && (
               <span className="atSubTabCount">
-                {t.key === "background" ? activeRuntime.backgroundDataUrls.length
+                {t.key === "garment" ? activeRuntime.garmentDataUrls.length
+                  : t.key === "background" ? activeRuntime.backgroundDataUrls.length
                   : t.key === "model" ? activeRuntime.modelDataUrls.length
                   : activeRuntime.poseDataUrls.length}
               </span>
@@ -312,9 +323,11 @@ export default function AssetsTab({
   activeRuntime,
   savedImages,
   formatTimestamp,
+  onGarmentFileChange,
   onBackgroundFileChange,
   onModelFileChange,
   onPoseFileChange,
+  removeGarmentImage,
   removeBackgroundImage,
   removeModelImage,
   removePoseImage,
@@ -324,6 +337,7 @@ export default function AssetsTab({
   const [mainTab, setMainTab] = useState<MainTab>("upload");
 
   const uploadCount =
+    activeRuntime.garmentDataUrls.length +
     activeRuntime.backgroundDataUrls.length +
     activeRuntime.modelDataUrls.length +
     activeRuntime.poseDataUrls.length;
@@ -380,9 +394,11 @@ export default function AssetsTab({
       {mainTab === "upload" && (
         <UploadPanel
           activeRuntime={activeRuntime}
+          onGarmentFileChange={onGarmentFileChange}
           onBackgroundFileChange={onBackgroundFileChange}
           onModelFileChange={onModelFileChange}
           onPoseFileChange={onPoseFileChange}
+          removeGarmentImage={removeGarmentImage}
           removeBackgroundImage={removeBackgroundImage}
           removeModelImage={removeModelImage}
           removePoseImage={removePoseImage}

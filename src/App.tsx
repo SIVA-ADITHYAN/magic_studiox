@@ -615,6 +615,7 @@ export default function App() {
   const backgroundAssetImages = useMemo(() => savedImages.filter((img) => img.kind === "asset-background"), [savedImages]);
   const modelAssetImages = useMemo(() => savedImages.filter((img) => img.kind === "asset-model"), [savedImages]);
   const poseAssetImages = useMemo(() => savedImages.filter((img) => img.kind === "asset-pose"), [savedImages]);
+  const garmentAssetImages = useMemo(() => savedImages.filter((img) => img.kind === "asset-garment"), [savedImages]);
 
   const activeTabLabel =
     activeTab === "prints" ? "Add Prints"
@@ -981,6 +982,12 @@ export default function App() {
         },
       };
     });
+
+    for (const file of limited) {
+      await saveImageRecord({ title: file.name || "Uploaded Garment", kind: "asset-garment", mimeType: file.type, blob: file, createdAt: Date.now() })
+        .then((record) => setSavedImages((prev) => [toSavedImageView(record), ...prev]))
+        .catch(console.error);
+    }
     if (input) input.value = "";
   }
 
@@ -1931,6 +1938,10 @@ export default function App() {
                           backgroundAssetImages={backgroundAssetImages}
                           modelAssetImages={modelAssetImages}
                           poseAssetImages={poseAssetImages}
+                          garmentAssetImages={garmentAssetImages}
+                          onBackgroundFileChange={onBackgroundFileChange}
+                          onModelFileChange={onModelFileChange}
+                          onPoseFileChange={onPoseFileChange}
                           addGarmentFromDataUrl={addGarmentFromDataUrl}
                           addBackgroundFromDataUrl={addBackgroundFromDataUrl}
                           addModelFromDataUrl={addModelFromDataUrl}
@@ -1983,9 +1994,11 @@ export default function App() {
                 savedImages={assetImages}
                 formatTimestamp={formatSavedTimestamp}
                 mimeToExtension={mimeToExtension}
+                onGarmentFileChange={onGarmentFileChange}
                 onBackgroundFileChange={onBackgroundFileChange}
                 onModelFileChange={onModelFileChange}
                 onPoseFileChange={onPoseFileChange}
+                removeGarmentImage={removeGarmentImage}
                 removeBackgroundImage={removeBackgroundImage}
                 removeModelImage={removeModelImage}
                 removePoseImage={removePoseImage}

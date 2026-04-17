@@ -61,6 +61,9 @@ interface StoryboardFormCardsProps {
   activeStoryboardId: string;
   isGenerating: boolean;
   onGarmentFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onBackgroundFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onModelFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onPoseFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   removeGarmentImage: (idx: number) => void;
   removeBackgroundImage: (idx: number) => void;
   removeModelImage: (idx: number) => void;
@@ -69,6 +72,7 @@ interface StoryboardFormCardsProps {
   backgroundAssetImages: SavedPrint[];
   modelAssetImages: SavedPrint[];
   poseAssetImages: SavedPrint[];
+  garmentAssetImages: SavedPrint[];
   addGarmentFromDataUrl: (url: string, fileName: string) => void;
   addBackgroundFromDataUrl: (url: string, fileName: string) => void;
   addModelFromDataUrl: (url: string, fileName: string) => void;
@@ -84,6 +88,9 @@ export default function StoryboardFormCards({
   activeStoryboardId,
   isGenerating,
   onGarmentFileChange,
+  onBackgroundFileChange,
+  onModelFileChange,
+  onPoseFileChange,
   removeGarmentImage,
   removeBackgroundImage,
   removeModelImage,
@@ -92,6 +99,7 @@ export default function StoryboardFormCards({
   backgroundAssetImages,
   modelAssetImages,
   poseAssetImages,
+  garmentAssetImages,
   addGarmentFromDataUrl,
   addBackgroundFromDataUrl,
   addModelFromDataUrl,
@@ -100,6 +108,7 @@ export default function StoryboardFormCards({
   onOpenImage,
 }: StoryboardFormCardsProps) {
   const [showSavedPrints, setShowSavedPrints] = useState(false);
+  const [showSavedGarments, setShowSavedGarments] = useState(false);
   const [showSavedBackgrounds, setShowSavedBackgrounds] = useState(false);
   const [showSavedModels, setShowSavedModels] = useState(false);
   const [showSavedPoses, setShowSavedPoses] = useState(false);
@@ -333,6 +342,31 @@ export default function StoryboardFormCards({
                 <div className="muted" style={{ marginTop: 8 }}>No saved prints found. Go to "Add Prints" to generate some.</div>
               )}
             </div>
+
+            <div className="chooseFromAssets" style={{ marginTop: 8 }}>
+              <button type="button" className="toggle-assets-btn" onClick={() => setShowSavedGarments((v) => !v)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ transform: showSavedGarments ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+                <span>Choose from Uploaded Garments</span>
+              </button>
+              {showSavedGarments && garmentAssetImages.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <label>Saved Garments</label>
+                  <div className="preview previewGarments">
+                    {garmentAssetImages.map((asset, idx) => (
+                      <div key={asset.id} className="previewItem" onClick={() => addGarmentFromDataUrl(asset.url, asset.fileName || `garment-asset-${idx}.png`)} title="Click to add as garment">
+                        <img src={asset.url} alt={asset.title} draggable={false} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {showSavedGarments && !garmentAssetImages.length && (
+                <div className="muted" style={{ marginTop: 8 }}>No uploaded garments in library yet. Upload a garment photo above to save it.</div>
+              )}
+            </div>
           </div>
 
           {/* ── Creative Direction ── */}
@@ -451,14 +485,7 @@ export default function StoryboardFormCards({
                       </svg>
                       Upload image
                     </label>
-                    <input id={`upload-bg-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => addBackgroundFromDataUrl(reader.result as string, file.name);
-                      reader.readAsDataURL(file);
-                      e.target.value = "";
-                    }} />
+                    <input id={`upload-bg-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={onBackgroundFileChange} />
                   </div>
 
                   <button type="button" className="toggle-assets-btn" onClick={() => setShowSavedBackgrounds((v) => !v)}>
@@ -573,14 +600,7 @@ export default function StoryboardFormCards({
                       </svg>
                       Upload image
                     </label>
-                    <input id={`upload-model-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => addModelFromDataUrl(reader.result as string, file.name);
-                      reader.readAsDataURL(file);
-                      e.target.value = "";
-                    }} />
+                    <input id={`upload-model-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={onModelFileChange} />
                   </div>
 
                   <button type="button" className="toggle-assets-btn" onClick={() => setShowSavedModels((v) => !v)}>
@@ -708,14 +728,7 @@ export default function StoryboardFormCards({
                       </svg>
                       Upload image
                     </label>
-                    <input id={`upload-pose-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = () => addPoseFromDataUrl(reader.result as string, file.name);
-                      reader.readAsDataURL(file);
-                      e.target.value = "";
-                    }} />
+                    <input id={`upload-pose-${activeStoryboardId}`} type="file" accept="image/*" style={{ display: "none" }} onChange={onPoseFileChange} />
                   </div>
 
                   <button type="button" className="toggle-assets-btn" onClick={() => setShowSavedPoses((v) => !v)}>
