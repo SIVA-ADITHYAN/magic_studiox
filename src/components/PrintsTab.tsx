@@ -209,7 +209,7 @@ export default function PrintsTab({
   const showColorSelector = (COLOR_SELECTOR_GARMENTS as readonly string[]).includes(selectedGarment.name);
 
   function handlePresetColor(hex: string) {
-    onConfigUpdate({ printColorHex: hex, printInputKind: "color" });
+    onConfigUpdate({ printColorHex: hex });
   }
 
   const templates = GARMENT_TEMPLATES[selectedGarment.name] ?? {};
@@ -388,7 +388,6 @@ export default function PrintsTab({
                 value={colorPickerValue}
                 onChange={(e) => {
                   handleColorPickerInput(e);
-                  onConfigUpdate({ printInputKind: "color" });
                 }}
                 aria-label="Pick garment color"
                 style={{ width: 48, height: 40, padding: 2, borderRadius: 8, border: "2px solid #E2E8F0", cursor: "pointer", flexShrink: 0 }}
@@ -398,7 +397,7 @@ export default function PrintsTab({
                 className="control"
                 type="text"
                 value={config.printColorHex}
-                onChange={(e) => onConfigUpdate({ printColorHex: e.target.value, printInputKind: "color" })}
+                onChange={(e) => onConfigUpdate({ printColorHex: e.target.value })}
                 onBlur={handleColorHexBlur}
                 placeholder="#RRGGBB"
                 style={{ flex: 1 }}

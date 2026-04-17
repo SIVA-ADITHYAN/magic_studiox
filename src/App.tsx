@@ -1334,7 +1334,7 @@ export default function App() {
     if (!isFullCloth && !rt.prints.baseGarmentBackDataUrl) { updatePrints(sbId, { error: "Please upload a back view white garment photo." }); return; }
 
     const printInputKind = activeConfig.printInputKind;
-    const printColorHex = printInputKind === "color" ? normalizeHexColor(activeConfig.printColorHex || "") : null;
+    const printColorHex = normalizeHexColor(activeConfig.printColorHex || "") || null;
     if (printInputKind === "color") {
       if (!printColorHex) { updatePrints(sbId, { error: "Please enter a hex color (e.g. #FF3366)." }); return; }
     } else if (!rt.prints.printDesignFrontDataUrl && !rt.prints.printDesignBackDataUrl && !rt.prints.printDesignSideDataUrl) {
@@ -1345,12 +1345,14 @@ export default function App() {
     resetPrintOutputs(sbId);
     startPrintTimer();
 
+    const isDesignMode = printInputKind === "image";
     try {
       const colorSwatch = printInputKind === "color" ? createColorSwatchDataUrl(printColorHex!) : null;
       const basePromptOpts = {
         additionalPrompt: activeConfig.printAdditionalPrompt || "",
         ...(typeof retryComment === "string" ? { retryComment } : {}),
         ...(printColorHex ? { colorHex: printColorHex } : {}),
+        ...(isDesignMode ? { hasDesign: true } : {}),
       };
       const promptFront = buildPrintApplicationPrompt({ ...basePromptOpts, view: "front" });
       const promptBack  = buildPrintApplicationPrompt({ ...basePromptOpts, view: "back" });

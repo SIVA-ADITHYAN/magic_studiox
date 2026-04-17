@@ -354,6 +354,7 @@ export function buildPrintApplicationPrompt(opts: {
   additionalPrompt: string;
   retryComment?: string;
   colorHex?: string;
+  hasDesign?: boolean;
   view?: "front" | "back" | "side";
 }): string {
   const extra = (opts.additionalPrompt || "").trim();
@@ -375,8 +376,73 @@ export function buildPrintApplicationPrompt(opts: {
     lines.push("");
   }
 
-  if (hasColorHex) {
-    // ── Color-recolor branch (unchanged) ─────────────────────────────────────
+  if (hasColorHex && opts.hasDesign) {
+    // ── Combined branch: recolor garment THEN overlay design ─────────────────
+    const viewInstruction =
+      view === "back"
+        ? "BACK — show only the back side of the garment; no front buttons, no chest pocket visible."
+        : view === "side"
+        ? "SIDE — strict 90-degree side profile only; the mannequin faces left or right, NOT toward the camera."
+        : "FRONT — full front of the garment faces the camera.";
+
+    const isNotFront = view === "back" || view === "side";
+
+    lines.push(
+      "IMAGE 1 = DESIGN PATTERN. IMAGE 2 = BASE GARMENT TEMPLATE.",
+      "",
+      "TASK: Two-step garment render — (1) recolor the garment to the target hex color, then (2) apply the design pattern on top using fabric blending.",
+      "",
+      // ── Step 1: recolor ──────────────────────────────────────────────────────
+      "STEP 1 — GARMENT RECOLOR (apply first):",
+      `- Recolor the garment fabric in IMAGE 2 to this exact hex color: ${colorHex}`,
+      "- Apply color ONLY to the garment fabric — not the mannequin/skin, not the background, not shadows.",
+      "- Preserve all original shading, highlights, wrinkles, folds, and fabric texture; the color must look dyed into the cloth, not painted over it.",
+      "- Do NOT modify background, mannequin, lighting, camera angle, framing, or any non-garment element.",
+      "",
+      // ── Step 2: design overlay ───────────────────────────────────────────────
+      "STEP 2 — DESIGN OVERLAY (apply on top of the recolored garment):",
+      "- Map the design from IMAGE 1 onto the recolored garment surface using fabric blending (multiply/overlay equivalent).",
+      "- The design integrates into the colored cloth — it is NOT a flat sticker placed on top.",
+      "- Pattern follows garment contours, folds, wrinkles, and perspective exactly.",
+      "- Pattern is confined strictly to the garment fabric — no bleed outside seams, neckline, hem, or cuffs.",
+      "- The garment base color from STEP 1 must remain as the ground; do not bleach, whiten, or override it.",
+      "- Scale the pattern relative to the garment bounding box — uniform density, consistent tiling.",
+      "- Preserve all fabric shadows and highlights; the design breathes with the fabric.",
+      "",
+      // ── Frame & scale ────────────────────────────────────────────────────────
+      "FRAME & SCALE RULES (NON-NEGOTIABLE):",
+      "- Garment size and framing must remain IDENTICAL to IMAGE 2 (no zoom in/out, no reframing).",
+      "- No change in camera angle, aspect ratio, or composition.",
+      "- No distortion, warping, or reshaping of the garment silhouette.",
+      "- No modification of background, mannequin, shadows, or any non-garment pixel.",
+      "",
+      // ── View ────────────────────────────────────────────────────────────────
+      `VIEW: Generate the ${viewInstruction}`,
+      ...(isNotFront
+        ? [
+            "MULTI-VIEW CONSISTENCY — match the front view output in:",
+            "  • garment color (same hex tone under the design)",
+            "  • pattern scale (garment bounding box as reference, not canvas)",
+            "  • pattern alignment, tiling density, and lighting integration",
+          ]
+        : [
+            "This is the REFERENCE VIEW. Color and pattern scale established here must be replicated exactly on back and side views.",
+          ]),
+      "",
+      // ── Reject list ──────────────────────────────────────────────────────────
+      "REJECT if any of these are true:",
+      "- Garment is not recolored to the target hex",
+      "- Design appears outside the garment boundary",
+      "- Design applied as flat sticker (not fabric-blended)",
+      "- Background or mannequin modified",
+      "- Camera angle or zoom changed",
+      "- Garment shape distorted",
+      "- Pattern density inconsistent across views",
+      "",
+      "Style: photorealistic e-commerce product photography, high detail, sharp focus, commercially usable.",
+    );
+  } else if (hasColorHex) {
+    // ── Color-recolor branch (color-only, no design) ──────────────────────────
     const viewLabel = view === "back" ? "BACK VIEW" : view === "side" ? "SIDE VIEW (90° profile)" : "FRONT VIEW";
     lines.push(
       `GARMENT VIEW: ${viewLabel}. The provided garment template image shows this exact angle — preserve it.`,
@@ -421,7 +487,7 @@ export function buildPrintApplicationPrompt(opts: {
     const isNotFront = view === "back" || view === "side";
 
     lines.push(
-      "IMAGE 1 = BASE GARMENT TEMPLATE. IMAGE 2 = DESIGN PATTERN TO APPLY.",
+      "IMAGE 1 = DESIGN PATTERN TO APPLY. IMAGE 2 = BASE GARMENT TEMPLATE.",
       "",
       "TASK: Apply the given design pattern onto the garment with strict scale consistency.",
       "",
