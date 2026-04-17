@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { login } from "../lib/auth";
 
+const BASE = import.meta.env.BASE_URL;
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -31,7 +33,7 @@ export default function LoginPage() {
       <div className="auth-card">
         {/* Brand */}
         <div className="auth-brand">
-          <div className="auth-brand-logo">B</div>
+          <div className="auth-brand-logo"><img src={`${BASE}logo.png`} alt="BotStudioX" /></div>
           <div>
             <div className="auth-brand-name">BotStudioX</div>
             <div className="auth-brand-sub">by The Bot Company</div>

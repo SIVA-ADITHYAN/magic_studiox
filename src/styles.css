@@ -102,8 +102,30 @@ body {
 }
 
 .sidebarBrand {
-  padding: 28px 20px 20px;
+  padding: 20px 16px 16px;
   border-bottom: 2px solid rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sidebarLogo {
+  width: 38px;
+  height: 38px;
+  background: #fff;
+  border-radius: 8px;
+  border: 2px solid rgba(255,255,255,0.6);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.sidebarLogo img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  display: block;
 }
 
 .brandEyebrow {
@@ -158,6 +180,25 @@ body {
   border-color: #fff;
   font-weight: 700;
   box-shadow: var(--shadow-pop-press);
+}
+.navButtonComingSoon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  opacity: 0.55;
+  cursor: not-allowed;
+  border: 2px dashed rgba(255,255,255,0.3);
+}
+.navButtonComingSoonBadge {
+  font-size: 9px;
+  font-weight: 900;
+  padding: 2px 7px;
+  background: var(--amber, #FBBF24);
+  color: #1E293B;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-family: var(--font-heading);
 }
 
 /* ─── Main Content ──────────────────────────────────────────────── */
@@ -1699,6 +1740,116 @@ input[type="file"]::file-selector-button:hover {
   font-size: 0.72rem;
   color: var(--text-muted, #94a3b8);
   margin-top: 2px;
+}
+
+/* ─── Session group card ────────────────────────────────────────────────── */
+
+/* Preview wrapper — matches atLibraryCardPreviewWrap but holds the thumb grid */
+.atGroupPreviewWrap {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--surface, #f8fafc);
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+}
+
+/* Grid of thumbnails. data-count drives the layout */
+.atGroupThumbGrid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  gap: 2px;
+  background: var(--border-subtle, #e2e8f0); /* gap colour */
+}
+
+.atGroupThumbGrid[data-count="1"] {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.atGroupThumbGrid[data-count="2"] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 3 images: first spans full width on top, two halves below */
+.atGroupThumbGrid[data-count="3"] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.atGroupThumbGrid[data-count="3"] .atGroupThumb:first-child {
+  grid-column: 1 / -1;
+}
+
+.atGroupThumbGrid[data-count="4"] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* Individual thumbnail button */
+.atGroupThumb {
+  position: relative;
+  overflow: hidden;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: var(--bg-subtle, #f1f5f9);
+  cursor: zoom-in;
+  transition: opacity 120ms;
+}
+.atGroupThumb:hover { opacity: 0.82; }
+
+.atGroupThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* "×N" badge — top-right of the preview wrap */
+.atGroupCountBadge {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 4;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+/* Overlay that appears on group card hover */
+.atGroupOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 150ms;
+  z-index: 3;
+}
+.atLibraryCard:hover .atGroupOverlay { opacity: 1; }
+
+/* "+N more" overlay on the 4th thumbnail slot when count > 4 */
+.atGroupMoreOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 /* ─── Garment Type ──────────────────────────────────────────────────────── */

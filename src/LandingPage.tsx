@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 const APP = "/register";
+const BASE = import.meta.env.BASE_URL;
 
 export default function LandingPage() {
   return (
@@ -8,7 +9,7 @@ export default function LandingPage() {
       {/* ── Nav ── */}
       <nav className="lp-nav">
         <a href="https://thebotcompany.in" target="_blank" rel="noreferrer" className="lp-nav-brand">
-          <div className="lp-nav-logo">B</div>
+          <div className="lp-nav-logo"><img src={`${BASE}logo.png`} alt="BotStudioX" /></div>
           <span className="lp-nav-name">The Bot Company</span>
         </a>
         <div className="lp-nav-links">
@@ -55,17 +56,49 @@ export default function LandingPage() {
               <span style={{ background: "#EF4444" }} />
               <span style={{ background: "#FBBF24" }} />
               <span style={{ background: "#34D399" }} />
-              BotStudioX
+              BotStudioX — Scene Generator
             </div>
-            <div className="lp-scene-grid">
-              <div className="lp-scene-slot gen" style={{ fontSize: 36 }}>👗</div>
-              <div className="lp-scene-slot gen" style={{ fontSize: 36 }}>🧥</div>
-              <div className="lp-scene-slot gen" style={{ fontSize: 36 }}>👔</div>
+
+            <div className="lp-process-flow">
+              {/* Input garment */}
+              <div className="lp-process-input-wrap">
+                <div className="lp-process-chip lp-chip-in">📥 Input</div>
+                <div className="lp-process-img-single">
+                  <img src={`${BASE}garment-templates/S1.png`} alt="Garment flat-lay" />
+                </div>
+                <div className="lp-process-sublabel">Garment photo</div>
+              </div>
+
+              {/* AI divider */}
+              <div className="lp-process-divider">
+                <div className="lp-process-ai-pill">✨ AI</div>
+                <div className="lp-process-arrow-line" />
+              </div>
+
+              {/* Output angles */}
+              <div className="lp-process-output-wrap">
+                <div className="lp-process-chip lp-chip-out">✅ Generated</div>
+                <div className="lp-scene-grid">
+                  <div className="lp-scene-slot">
+                    <img src={`${BASE}garment-templates/S1.png`} alt="Front view" />
+                    <span className="lp-scene-angle">Front</span>
+                  </div>
+                  <div className="lp-scene-slot">
+                    <img src={`${BASE}garment-templates/S2.png`} alt="Side view" />
+                    <span className="lp-scene-angle">Side</span>
+                  </div>
+                  <div className="lp-scene-slot">
+                    <img src={`${BASE}garment-templates/S3.png`} alt="Back view" />
+                    <span className="lp-scene-angle">Back</span>
+                  </div>
+                </div>
+              </div>
             </div>
+
             <div className="lp-progress-bar">
-              <div className="lp-progress-fill" />
+              <div className="lp-progress-fill lp-progress-done" />
             </div>
-            <div className="lp-progress-label">Generating 3 angles… 72%</div>
+            <div className="lp-progress-label">✅ 3 scenes ready in 24s</div>
           </div>
           <div className="lp-floating-badge bottom-left">
             ⚡ 3 angles in &lt; 30s
@@ -118,6 +151,7 @@ export default function LandingPage() {
               color: "#F0FDF4",
               title: "Multi-Angle Shots",
               desc: "Automatically generate front, side, and back views in a single run. Full 360° product coverage, no extra shoots.",
+              comingSoon: true,
             },
             {
               icon: "🎨",
@@ -132,7 +166,8 @@ export default function LandingPage() {
               desc: "Organise every shoot into named storyboards. Save, reload, and compare configurations across your entire catalogue.",
             },
           ].map((f) => (
-            <div className="lp-feature-card" key={f.title}>
+            <div className={`lp-feature-card${f.comingSoon ? " lp-feature-card-soon" : ""}`} key={f.title}>
+              {f.comingSoon && <div className="lp-coming-soon-badge">Coming Soon</div>}
               <div className="lp-feature-icon" style={{ background: f.color }}>
                 {f.icon}
               </div>
@@ -146,33 +181,53 @@ export default function LandingPage() {
       {/* ── How it works ── */}
       <section className="lp-section" id="how-it-works" style={{ paddingTop: 0 }}>
         <div className="lp-section-label">✦ Process</div>
-        <h2 className="lp-section-title">Three steps to a finished shoot</h2>
+        <h2 className="lp-section-title">From garment to gallery in five steps</h2>
         <p className="lp-section-sub">
           No creative briefs, no scheduling, no post-production. Just upload and generate.
         </p>
-        <div className="lp-steps">
+        <div className="lp-steps lp-steps-5">
           {[
             {
               num: "1",
+              icon: "📸",
               color: "#EDE9FE",
-              title: "Upload your garment",
-              desc: "Drop in a flat-lay or product photo. Add optional model and background references for more creative control.",
+              title: "Upload Garment",
+              desc: "Drop in a flat-lay or product photo as your base canvas.",
             },
             {
               num: "2",
+              icon: "🧍",
               color: "#FDF2F8",
-              title: "Configure the scene",
-              desc: "Choose occasion, style, footwear, model pose, and more — or let the AI decide using smart defaults.",
+              title: "Add References",
+              desc: "Attach model and background references for full creative control.",
             },
             {
               num: "3",
+              icon: "⚙️",
               color: "#FFF7ED",
-              title: "Download your images",
-              desc: "Receive studio-quality images in seconds. Save to your library or download directly for your store.",
+              title: "Configure Scene",
+              desc: "Pick occasion, style, pose, footwear — or let AI choose smart defaults.",
+            },
+            {
+              num: "4",
+              icon: "🤖",
+              color: "#F0FDF4",
+              title: "AI Generates",
+              desc: "Gemini AI renders photorealistic front, side, and back views in under 30s.",
+            },
+            {
+              num: "5",
+              icon: "⬇️",
+              color: "#FEF3C7",
+              title: "Export & Save",
+              desc: "Download production-ready images or save them to your storyboard library.",
             },
           ].map((s) => (
             <div className="lp-step" key={s.num}>
-              <div className="lp-step-num" style={{ background: s.color }}>{s.num}</div>
+              <div className="lp-step-num" style={{ background: s.color }}>
+                <span className="lp-step-icon">{s.icon}</span>
+                <span className="lp-step-badge">{s.num}</span>
+              </div>
               <h3>{s.title}</h3>
               <p>{s.desc}</p>
             </div>
@@ -255,7 +310,7 @@ export default function LandingPage() {
           <div className="lp-footer-top">
             <div>
               <div className="lp-footer-brand-name">
-                <div className="lp-footer-logo">B</div>
+                <div className="lp-footer-logo"><img src={`${BASE}logo.png`} alt="BotStudioX" /></div>
                 The Bot Company
               </div>
               <p className="lp-footer-tagline">

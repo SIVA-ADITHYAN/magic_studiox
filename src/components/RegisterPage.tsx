@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register } from "../lib/auth";
 
+const BASE = import.meta.env.BASE_URL;
+
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
@@ -32,7 +34,7 @@ export default function RegisterPage() {
       <div className="auth-card">
         {/* Brand */}
         <div className="auth-brand">
-          <div className="auth-brand-logo">B</div>
+          <div className="auth-brand-logo"><img src={`${BASE}logo.png`} alt="BotStudioX" /></div>
           <div>
             <div className="auth-brand-name">BotStudioX</div>
             <div className="auth-brand-sub">by The Bot Company</div>

@@ -48,18 +48,21 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
 .lp-nav-logo {
   width: 36px;
   height: 36px;
-  background: var(--accent);
+  background: #fff;
   border-radius: var(--radius-sm);
   border: 2px solid var(--border);
   box-shadow: 2px 2px 0 var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: "Outfit", sans-serif;
-  font-weight: 900;
-  font-size: 18px;
-  color: #fff;
+  overflow: hidden;
   flex-shrink: 0;
+}
+.lp-nav-logo img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  display: block;
 }
 .lp-nav-name {
   font-family: "Outfit", sans-serif;
@@ -237,43 +240,117 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
   height: 10px;
   border-radius: 50%;
 }
-.lp-scene-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+/* ─── Hero process flow ──────────────────────────────── */
+.lp-process-flow {
+  display: flex;
+  align-items: center;
   gap: 10px;
   margin-bottom: 16px;
 }
-.lp-scene-slot {
-  aspect-ratio: 3/4;
+.lp-process-input-wrap,
+.lp-process-output-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.lp-process-input-wrap { flex-shrink: 0; }
+.lp-process-output-wrap { flex: 1; min-width: 0; }
+.lp-process-img-single {
+  width: 68px;
+  height: 90px;
   border-radius: var(--radius-sm);
   border: 2px solid var(--border);
+  overflow: hidden;
+  background: #F8F5FF;
+  position: relative;
+}
+.lp-process-img-single img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.lp-process-sublabel {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.lp-process-chip {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border);
+  font-family: "Outfit", sans-serif;
+}
+.lp-chip-in  { background: #FFF7ED; }
+.lp-chip-out { background: #F0FDF4; }
+.lp-process-divider {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-size: 28px;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.lp-process-ai-pill {
+  font-size: 10px;
   font-weight: 900;
+  padding: 3px 9px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--border);
+  box-shadow: 2px 2px 0 var(--border);
+  font-family: "Outfit", sans-serif;
+  white-space: nowrap;
+}
+.lp-process-arrow-line {
+  width: 28px;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--border) 0, var(--border) 4px, transparent 4px, transparent 8px);
+}
+.lp-scene-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  width: 100%;
+}
+.lp-scene-slot {
+  aspect-ratio: 3/4;
+  min-height: 80px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border);
   position: relative;
   overflow: hidden;
-}
-.lp-scene-slot.gen {
   background: linear-gradient(135deg, #EDE9FE 0%, #FDF2F8 100%);
+  display: block;
 }
-.lp-scene-slot.gen::after {
-  content: "✓";
+.lp-scene-slot img {
   position: absolute;
-  top: 6px;
-  right: 8px;
-  font-size: 11px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.lp-scene-angle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 9px;
   font-weight: 800;
-  color: var(--green);
-  background: #fff;
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid var(--border);
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  padding: 3px 4px;
+  letter-spacing: 0.4px;
+  font-family: "Outfit", sans-serif;
 }
 .lp-progress-bar {
   height: 8px;
@@ -289,10 +366,33 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
   border-radius: var(--radius-full);
   width: 72%;
 }
+.lp-progress-done { width: 100%; background: var(--green); }
 .lp-progress-label {
   font-size: 12px;
   color: var(--muted);
   font-weight: 600;
+}
+
+/* ─── Coming Soon feature card ───────────────────────── */
+.lp-feature-card-soon {
+  position: relative;
+  opacity: 0.85;
+}
+.lp-coming-soon-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-family: "Outfit", sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 3px 9px;
+  background: var(--amber);
+  color: var(--text);
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border);
+  box-shadow: 2px 2px 0 var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 .lp-floating-badge {
   position: absolute;
@@ -433,12 +533,15 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
   gap: 24px;
   position: relative;
 }
+.lp-steps-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
 .lp-steps::before {
   content: "";
   position: absolute;
-  top: 32px;
-  left: calc(16.66% + 16px);
-  right: calc(16.66% + 16px);
+  top: 44px;
+  left: calc(10% + 16px);
+  right: calc(10% + 16px);
   height: 2px;
   background: repeating-linear-gradient(90deg, var(--border) 0, var(--border) 8px, transparent 8px, transparent 16px);
 }
@@ -447,15 +550,16 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 32px 20px;
+  padding: 28px 16px;
   background: var(--surface);
   border: 2.5px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow);
+  position: relative;
 }
 .lp-step-num {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-full);
   border: 2.5px solid var(--border);
   display: flex;
@@ -463,18 +567,41 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
   justify-content: center;
   font-family: "Outfit", sans-serif;
   font-weight: 900;
-  font-size: 22px;
+  font-size: 26px;
   margin-bottom: 16px;
   box-shadow: var(--shadow);
+  position: relative;
+}
+.lp-step-icon {
+  display: block;
+  line-height: 1;
+}
+.lp-step-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 22px;
+  height: 22px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-full);
+  border: 2px solid #fff;
+  font-family: "Outfit", sans-serif;
+  font-weight: 900;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 .lp-step h3 {
   font-family: "Outfit", sans-serif;
   font-weight: 800;
-  font-size: 17px;
+  font-size: 15px;
   margin-bottom: 8px;
 }
 .lp-step p {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.6;
 }
@@ -660,15 +787,20 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
 .lp-footer-logo {
   width: 32px;
   height: 32px;
-  background: var(--accent);
+  background: #fff;
   border-radius: 6px;
   border: 2px solid rgba(255,255,255,0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 900;
-  font-size: 16px;
-  color: #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.lp-footer-logo img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  display: block;
 }
 .lp-footer-tagline {
   font-size: 14px;
@@ -732,7 +864,7 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
   .lp-hero { grid-template-columns: 1fr; gap: 40px; padding: 64px 24px 48px; }
   .lp-hero-visual { display: none; }
   .lp-features-grid { grid-template-columns: 1fr 1fr; }
-  .lp-steps { grid-template-columns: 1fr; }
+  .lp-steps, .lp-steps-5 { grid-template-columns: 1fr 1fr; }
   .lp-steps::before { display: none; }
   .lp-showcase-inner { grid-template-columns: 1fr; }
   .lp-showcase-visual { display: none; }
@@ -742,6 +874,7 @@ body { background: var(--bg); color: var(--text); line-height: 1.6; }
 }
 @media (max-width: 600px) {
   .lp-features-grid { grid-template-columns: 1fr; }
+  .lp-steps, .lp-steps-5 { grid-template-columns: 1fr; }
   .lp-footer-top { grid-template-columns: 1fr; }
   .lp-nav-links { display: none; }
 }

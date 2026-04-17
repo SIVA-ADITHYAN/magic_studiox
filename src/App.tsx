@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type ChangeEvent } from "react";
+
+const BASE = import.meta.env.BASE_URL;
 import DeleteStoryboardModal from "./components/DeleteStoryboardModal";
 import FieldLabel from "./components/FieldLabel";
 import ImageModal from "./components/ImageModal";
@@ -9,7 +11,6 @@ import StoryboardResultsPane from "./components/StoryboardResultsPane";
 import PrintsTab from "./components/PrintsTab";
 import Toast, { type ToastItem } from "./components/Toast";
 import SavedImagesPane from "./components/SavedImagesPane";
-import MultiAngleTab from "./components/MultiAngleTab";
 import AssetsTab from "./components/AssetsTab";
 
 import { base64ToBytes, dataUrlToInlineImage, generateImage } from "./lib/gemini";
@@ -105,70 +106,205 @@ type StoryboardRuntime = {
   resultTimingsMs: Record<string, number> | null;
 };
 
-type AppTab = "prints" | "generate" | "assets" | "saved" | "multiangle";
+type AppTab = "prints" | "generate" | "assets" | "saved";
 type SavedImageView = SavedImageRecord & { url: string };
 
 // ─── Pure helpers (outside component) ────────────────────────────────────────
 
 /**
+ * Strips the background from a design image so only the pattern remains.
+ *
+ * Strategy:
+ *  1. If the image already carries any transparent pixels it is returned
+ *     as-is — background already removed upstream.
+ *  2. Sample the four corner pixels to infer the background colour.
+ *  3. BFS flood-fill from every edge pixel, zeroing out any pixel whose
+ *     Euclidean RGB distance from the background is ≤ TOLERANCE.
+ *     Flood-fill ensures only the connected background region is erased —
+ *     same-coloured pixels fully enclosed by the pattern are preserved.
+ *
+ * Returns an HTMLCanvasElement with a transparent background ready to use
+ * as a design source in compositing.
+ */
+function removeDesignBackground(img: HTMLImageElement): HTMLCanvasElement {
+  const W = img.naturalWidth  || 1;
+  const H = img.naturalHeight || 1;
+
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(img, 0, 0);
+
+  const imageData = ctx.getImageData(0, 0, W, H);
+  const data = imageData.data; // Uint8ClampedArray, layout: [R,G,B,A, R,G,B,A …]
+
+  // ── 1. Skip if the image already has any transparent pixels ──────────────
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) {
+      // Already has transparency — nothing to do.
+      return c;
+    }
+  }
+
+  // ── 2. Detect background colour from the four corners ────────────────────
+  const corners = [
+    0,             // top-left
+    (W - 1),       // top-right
+    (H - 1) * W,  // bottom-left
+    (H - 1) * W + (W - 1), // bottom-right
+  ];
+  let bgR = 0, bgG = 0, bgB = 0;
+  for (const px of corners) {
+    const i = px * 4;
+    bgR += data[i];
+    bgG += data[i + 1];
+    bgB += data[i + 2];
+  }
+  bgR = Math.round(bgR / corners.length);
+  bgG = Math.round(bgG / corners.length);
+  bgB = Math.round(bgB / corners.length);
+
+  // Euclidean colour distance threshold.
+  // 30 comfortably absorbs JPEG/PNG compression fringing (≈10 units) while
+  // being well below a typical mid-tone design colour (≥60 units away).
+  const TOLERANCE = 30;
+
+  function dist(i: number): number {
+    const dr = data[i]     - bgR;
+    const dg = data[i + 1] - bgG;
+    const db = data[i + 2] - bgB;
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  }
+
+  // ── 3. BFS flood-fill from all four edges ─────────────────────────────────
+  // Using a flat Uint8Array as the visited set for O(1) lookup.
+  const visited = new Uint8Array(W * H);
+  // Pre-allocate queue large enough for the worst case (all edge pixels).
+  const queue = new Int32Array(W * H);
+  let head = 0, tail = 0;
+
+  function enqueue(pos: number) {
+    if (visited[pos]) return;
+    visited[pos] = 1;
+    queue[tail++] = pos;
+  }
+
+  // Seed every pixel on the four border rows/columns.
+  for (let x = 0; x < W; x++) {
+    enqueue(x);               // top row
+    enqueue((H - 1) * W + x); // bottom row
+  }
+  for (let y = 1; y < H - 1; y++) {
+    enqueue(y * W);           // left column
+    enqueue(y * W + W - 1);   // right column
+  }
+
+  while (head < tail) {
+    const pos = queue[head++]!;
+    const i = pos * 4;
+
+    if (dist(i) > TOLERANCE) continue; // Pixel belongs to the pattern — stop
+
+    // Erase this background pixel.
+    data[i + 3] = 0;
+
+    const x = pos % W;
+    const y = (pos - x) / W;
+
+    if (x > 0)     enqueue(pos - 1);     // left
+    if (x < W - 1) enqueue(pos + 1);     // right
+    if (y > 0)     enqueue(pos - W);     // up
+    if (y < H - 1) enqueue(pos + W);     // down
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return c;
+}
+
+/**
  * Canvas-composites a design image onto a garment image.
- * Uses destination-in masking so the design is clipped strictly to the garment
- * silhouette (alpha channel), then blended with multiply for a realistic fabric
- * look. Pixels outside the garment boundary are never touched.
+ *
+ * Pipeline (3 off-screen canvases, zero white-background leak):
+ *
+ *  designLayer  – design scaled to cover, then destination-in with garment
+ *                 → design pixels exist ONLY inside the garment silhouette.
+ *
+ *  blendCanvas  – white fill + garment base + designLayer via multiply
+ *                 → correct fabric shading; then destination-in with garment
+ *                 strips the white fill entirely, restoring transparency.
+ *
+ *  output       – transparent base; blendCanvas drawn normally.
+ *
+ * Result: transparent outside garment, clean hard edges, no halo/spill.
  */
 function compositeDesignOnGarment(garmentDataUrl: string, designDataUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) { reject(new Error("Canvas not supported")); return; }
-
     const garmentImg = new Image();
     garmentImg.onload = () => {
       const W = garmentImg.naturalWidth || 800;
       const H = garmentImg.naturalHeight || 1000;
-      canvas.width = W;
-      canvas.height = H;
 
       const designImg = new Image();
       designImg.onload = () => {
-        // ── Step 1: Build masked design layer on an off-screen canvas ─────────
-        // Scale design to COVER the full garment bounds (cover, not contain)
-        // so no garment area is left unpainted.
-        const maskCanvas = document.createElement("canvas");
-        maskCanvas.width = W;
-        maskCanvas.height = H;
-        const mCtx = maskCanvas.getContext("2d")!;
+        // ── Strip design background before compositing ────────────────────────
+        // Produces a canvas that is transparent wherever the background was,
+        // so solid/white backgrounds never contribute colour to the garment.
+        const cleanDesign = removeDesignBackground(designImg);
 
-        const designAR = designImg.naturalWidth / designImg.naturalHeight;
+        // ── Cover-scale the design to fill the full garment bounds ────────────
+        const designAR = cleanDesign.width / cleanDesign.height;
         const canvasAR = W / H;
         let dw: number, dh: number;
         if (designAR > canvasAR) { dh = H; dw = H * designAR; }
         else                     { dw = W; dh = W / designAR; }
-        mCtx.drawImage(designImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        const dx = (W - dw) / 2;
+        const dy = (H - dh) / 2;
 
-        // ── Step 2: Clip design strictly to garment alpha with destination-in ──
-        // Every pixel where the garment is transparent becomes transparent in
-        // the design layer — design can never bleed outside the garment edge.
-        mCtx.globalCompositeOperation = "destination-in";
-        mCtx.drawImage(garmentImg, 0, 0, W, H);
-        mCtx.globalCompositeOperation = "source-over";
+        // ── Step 1: designLayer — design hard-clipped to garment silhouette ───
+        // destination-in keeps design pixels only where garment alpha > 0.
+        // Any design background or halo outside the garment becomes transparent.
+        const designLayer = document.createElement("canvas");
+        designLayer.width = W; designLayer.height = H;
+        const dlCtx = designLayer.getContext("2d")!;
+        dlCtx.drawImage(cleanDesign, dx, dy, dw, dh);
+        dlCtx.globalCompositeOperation = "destination-in";
+        dlCtx.drawImage(garmentImg, 0, 0, W, H);
+        dlCtx.globalCompositeOperation = "source-over";
 
-        // ── Step 3: Compose final output ──────────────────────────────────────
-        // White fill so multiply math is correct for white-base garment templates.
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, W, H);
+        // ── Step 2: blendCanvas — multiply composite, then re-mask ───────────
+        // White fill is required so multiply math works on light garments (a
+        // white garment × colored design = that color). After blending we
+        // remove the white fill with a second destination-in pass so nothing
+        // outside the garment silhouette survives.
+        const blendCanvas = document.createElement("canvas");
+        blendCanvas.width = W; blendCanvas.height = H;
+        const bCtx = blendCanvas.getContext("2d")!;
 
-        // Draw the garment base (preserves folds, shadows, silhouette)
-        ctx.drawImage(garmentImg, 0, 0, W, H);
+        // White base for physically correct multiply blending
+        bCtx.fillStyle = "#ffffff";
+        bCtx.fillRect(0, 0, W, H);
 
-        // Blend the masked design with multiply — print follows fabric shading
-        ctx.globalCompositeOperation = "multiply";
-        ctx.drawImage(maskCanvas, 0, 0);
+        // Garment base — preserves all folds, shadows, and edge detail
+        bCtx.drawImage(garmentImg, 0, 0, W, H);
 
-        // Reset back to normal compositing
-        ctx.globalCompositeOperation = "source-over";
+        // Blend design onto garment; design is already silhouette-clipped
+        bCtx.globalCompositeOperation = "multiply";
+        bCtx.drawImage(designLayer, 0, 0);
 
-        resolve(canvas.toDataURL("image/png"));
+        // Re-apply garment alpha: wipes the white background and any bleed at
+        // semi-transparent edges. After this the canvas is transparent wherever
+        // the garment is transparent — no spill possible.
+        bCtx.globalCompositeOperation = "destination-in";
+        bCtx.drawImage(garmentImg, 0, 0, W, H);
+        bCtx.globalCompositeOperation = "source-over";
+
+        // ── Step 3: output — transparent canvas, no background paint ─────────
+        const output = document.createElement("canvas");
+        output.width = W; output.height = H;
+        const outCtx = output.getContext("2d")!;
+        outCtx.drawImage(blendCanvas, 0, 0);
+
+        resolve(output.toDataURL("image/png"));
       };
       designImg.onerror = () => reject(new Error("Failed to load design image"));
       designImg.src = designDataUrl;
@@ -484,7 +620,6 @@ export default function App() {
     activeTab === "prints" ? "Add Prints"
     : activeTab === "assets" ? "Uploaded Assets"
     : activeTab === "saved" ? "Saved images"
-    : activeTab === "multiangle" ? "Multi Angle - Beta"
     : "Generate Images";
 
   // ── Derived computed values used in generation ────────────────────────────
@@ -739,6 +874,23 @@ export default function App() {
       });
     } catch (e) {
       console.error("Failed to delete image", e);
+    }
+  }
+
+  async function deleteGroup(ids: string[]) {
+    const n = ids.length;
+    if (!confirm(`Delete ${n} image${n > 1 ? "s" : ""}? This cannot be undone.`)) return;
+    try {
+      await Promise.all(ids.map((id) => deleteSavedImage(id)));
+      setSavedImages((prev) => {
+        const idSet = new Set(ids);
+        return prev.filter((img) => {
+          if (idSet.has(img.id)) { URL.revokeObjectURL(img.url); return false; }
+          return true;
+        });
+      });
+    } catch (e) {
+      console.error("Failed to delete group", e);
     }
   }
 
@@ -1666,11 +1818,14 @@ export default function App() {
       <div className="appShell">
         <aside className="sidebar">
           <div className="sidebarBrand">
-            <div className="brandEyebrow">The Bot Company</div>
-            <div className="brandTitle">BotStudioX</div>
+            <div className="sidebarLogo"><img src={`${BASE}logo.png`} alt="BotStudioX" /></div>
+            <div>
+              <div className="brandEyebrow">The Bot Company</div>
+              <div className="brandTitle">BotStudioX</div>
+            </div>
           </div>
           <nav className="sidebarNav" role="tablist" aria-label="Main sections">
-            {(["prints", "generate", "multiangle", "saved", "assets"] as const).map((tab) => (
+            {(["prints", "generate", "saved", "assets"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -1680,11 +1835,14 @@ export default function App() {
               >
                 {tab === "prints" ? "Add Prints"
                   : tab === "generate" ? "Generate Images"
-                  : tab === "multiangle" ? "Multi Angle - Beta"
                   : tab === "saved" ? "Saved images"
                   : "Uploaded Assets"}
               </button>
             ))}
+            <button type="button" className="navButton navButtonComingSoon" disabled aria-disabled="true">
+              Multi-Angle
+              <span className="navButtonComingSoonBadge">Soon</span>
+            </button>
           </nav>
         </aside>
 
@@ -1814,6 +1972,7 @@ export default function App() {
                 mimeToExtension={mimeToExtension}
                 onOpenImage={openImageModal}
                 onDeleteImage={deleteImage}
+                onDeleteGroup={deleteGroup}
               />
             )}
 
@@ -1835,7 +1994,7 @@ export default function App() {
               />
             )}
 
-            {activeTab === "multiangle" && <MultiAngleTab />}
+
           </div>
         </main>
       </div>

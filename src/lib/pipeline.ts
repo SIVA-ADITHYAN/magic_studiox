@@ -418,44 +418,65 @@ export function buildPrintApplicationPrompt(opts: {
         ? "SIDE — strict 90-degree side profile only; the mannequin faces left or right, NOT toward the camera."
         : "FRONT — full front of the garment faces the camera.";
 
+    const isNotFront = view === "back" || view === "side";
+
     lines.push(
-      "Use the provided garment image as the BASE TEMPLATE.",
-      "Use the provided design image as the EXACT TEXTURE OVERLAY.",
+      "IMAGE 1 = BASE GARMENT TEMPLATE. IMAGE 2 = DESIGN PATTERN TO APPLY.",
       "",
-      "CRITICAL RULES (STRICT):",
-      "- The original garment color MUST be preserved exactly.",
-      "- Do NOT change the base fabric color under any condition.",
-      "- Do NOT convert dark fabric into white or lighter tones.",
-      "- The design must be OVERLAID on top of the existing garment color, not replace it.",
+      "TASK: Apply the given design pattern onto the garment with strict scale consistency.",
       "",
+      // ── Frame & scale rules ──────────────────────────────────────────────────
+      "FRAME & SCALE RULES (NON-NEGOTIABLE):",
+      "- The garment size and framing must remain IDENTICAL to the input template (no zoom in, no zoom out).",
+      "- The garment must fully fill the frame in exactly the same way as the input image.",
+      "- Scale the design pattern relative to the garment bounding box — NOT relative to the full canvas.",
+      "- Pattern density and tile spacing must remain uniform and consistent across front, back, and side views.",
+      "- Do NOT enlarge or shrink the pattern arbitrarily between views.",
+      "- Preserve original garment proportions, folds, stitching, seams, and perspective without any distortion.",
+      "",
+      // ── Texture application ──────────────────────────────────────────────────
       "TEXTURE APPLICATION:",
-      "- The design acts as a semi-transparent print layer blended over the fabric.",
-      "- Blend the design naturally with fabric folds, shadows, and lighting.",
-      "- Preserve all shadows, wrinkles, and original material texture from the garment template.",
-      "- Do not recreate, reinterpret, or distort the design pattern in any way.",
+      "- Treat the design as a fabric texture mapped onto the garment surface — NOT a flat image overlay.",
+      "- The pattern must follow garment contours, wrinkles, folds, and perspective exactly.",
+      "- Use realistic fabric blending (multiply/overlay mode equivalent): the design integrates into the cloth.",
+      "- Preserve all fabric shadows, highlights, and material texture from the garment template.",
+      "- The original garment base color MUST remain exactly as-is; the design overlays it, never replaces it.",
+      "- Do NOT whiten, bleach, lighten, or recolor the base fabric under any condition.",
       "",
-      "MASKING:",
-      "- Apply the design ONLY on the garment surface.",
-      "- Do NOT apply on the background or mannequin.",
-      "- Do NOT extend outside garment edges — silhouette, seams, neckline, hem, cuffs are hard boundaries.",
-      "- Every pixel outside the garment is pixel-identical to the garment template.",
+      // ── Masking & strict constraints ─────────────────────────────────────────
+      "STRICT CONSTRAINTS:",
+      "- Apply the design ONLY on the garment fabric surface — nowhere else.",
+      "- No background modification of any kind; every background pixel is pixel-identical to the template.",
+      "- No pattern bleed outside garment edges (silhouette, seams, neckline, hem, cuffs are hard boundaries).",
+      "- No change in camera angle, zoom level, or framing.",
+      "- No distortion, warping, or reshaping of the garment silhouette.",
+      "- Do NOT add, remove, or modify the mannequin, background, shadows, or any non-garment element.",
       "",
-      `VIEW REQUIREMENTS: Generate the ${viewInstruction}`,
+      // ── View-specific ────────────────────────────────────────────────────────
+      `VIEW: Generate the ${viewInstruction}`,
+      ...(isNotFront
+        ? [
+            "MULTI-VIEW CONSISTENCY — match the front view output in:",
+            "  • pattern scale (use the garment bounding box as the scale reference, not canvas size)",
+            "  • pattern alignment and tiling density",
+            "  • lighting integration and color temperature",
+          ]
+        : [
+            "This is the REFERENCE VIEW. The pattern scale established here must be replicated exactly on back and side views.",
+          ]),
       "",
-      "COLOR PRESERVATION:",
-      "- Maintain the original garment base color exactly (e.g. blue denim stays blue, dark shirt stays dark).",
-      "- The print pattern should adapt to the garment color, not override it.",
-      "- Avoid any whitening, bleaching, lightening, or recoloring of the base fabric.",
+      // ── Negative list ────────────────────────────────────────────────────────
+      "REJECT if any of these are true:",
+      "- Base fabric color changed or lightened",
+      "- Pattern scale differs from front-view reference",
+      "- Pattern appears outside garment boundary",
+      "- Background or mannequin modified",
+      "- Camera angle or zoom changed",
+      "- Garment shape distorted",
+      "- Pattern applied as flat sticker rather than fabric texture",
+      "- Pattern density inconsistent across views",
       "",
-      "NEGATIVE (these make the output incorrect):",
-      "- no color change to the base fabric",
-      "- no white fabric unless the input garment is white",
-      "- no pattern distortion or recreation",
-      "- no design applied on background",
-      "- no lighting overexposure",
-      "- no bleed outside garment edges",
-      "",
-      "Style: realistic e-commerce product photography, high detail, sharp focus.",
+      "Style: photorealistic e-commerce product photography, high detail, sharp focus, commercially usable.",
     );
   }
   if (extra) {
@@ -463,7 +484,7 @@ export function buildPrintApplicationPrompt(opts: {
   }
   lines.push(
     "",
-    "Avoid: design on background, design outside garment boundary, wrong camera angle, front view when back/side was requested, background change, mannequin change, added fabric, added layers, warped pattern, wrong fabric color, wrong scale, low-res, blur, text overlay, watermark.",
+    "Final check: design confined to garment only · garment framing unchanged · pattern scale consistent with front view · fabric color preserved · no background change · no mannequin change · no zoom · no warping · no flat overlay · no watermark.",
   );
   return lines.join("\n").trim();
 }
