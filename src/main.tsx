@@ -18,7 +18,7 @@ function ProtectedApp() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter basename="/ecommerce-scene-generator">
+    <BrowserRouter>
       <Routes>
         <Route path="/"         element={<LandingPage />} />
         <Route path="/register" element={<RegisterPage />} />
